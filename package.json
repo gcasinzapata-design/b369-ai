@@ -1,7 +1,7 @@
 {
-  "name": "b369-ai-inmuebles",
+  "name": "b369-ai",
   "private": true,
-  "version": "1.3.0",
+  "version": "5.0.0-lite",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,12 +10,7 @@
   "dependencies": {
     "next": "15.0.0",
     "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "leaflet": "^1.9.4",
-    "react-leaflet": "^4.2.1",
-    "jspdf": "^2.5.1",
-    "html2canvas": "^1.4.1",
-    "cheerio": "^1.0.0-rc.12"
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.20",

@@ -1,0 +1,35 @@
+[
+  {
+    "id": "1",
+    "titulo": "Departamento vista al mar",
+    "precio": 210000,
+    "moneda": "USD",
+    "m2": 78,
+    "habitaciones": 2,
+    "direccion": "Malec\u00f3n 28 de Julio",
+    "fuente": "sample",
+    "url": "https://example.com/a"
+  },
+  {
+    "id": "2",
+    "titulo": "Flat remodelado cerca al parque",
+    "precio": 185000,
+    "moneda": "USD",
+    "m2": 70,
+    "habitaciones": 2,
+    "direccion": "Av. La Paz",
+    "fuente": "sample",
+    "url": "https://example.com/b"
+  },
+  {
+    "id": "3",
+    "titulo": "Casa amplia con jard\u00edn",
+    "precio": 360000,
+    "moneda": "USD",
+    "m2": 160,
+    "habitaciones": 4,
+    "direccion": "Calle Tarata",
+    "fuente": "sample",
+    "url": "https://example.com/c"
+  }
+]

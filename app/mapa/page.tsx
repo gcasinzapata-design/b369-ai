@@ -1,1 +1,0 @@
-export default function Mapa(){return <div className='space-y-2'><h1 className='text-2xl font-semibold'>Mapa</h1><p>Viewport search y clusters (conectar a adapters).</p></div>}
