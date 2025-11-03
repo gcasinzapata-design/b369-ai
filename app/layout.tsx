@@ -1,25 +1,32 @@
-
 import './globals.css'
 import Link from 'next/link'
-export default function RootLayout({ children }:{children:React.ReactNode}){
-  return (<html lang="es"><body>
-    <header className="border-b bg-white">
-      <div className="container py-3 flex items-center gap-4">
-        <Link href="/" className="flex items-center gap-2">
-          <img src="/logo.svg" width="32" height="32" className="rounded-md" />
-          <span className="font-semibold tracking-wide">B369 · Marketing Inmobiliario</span>
-        </Link>
-        <nav className="ml-auto text-sm flex gap-4">
-          <Link href="/">Inicio</Link>
-          <Link href="/resultados">Resultados</Link>
-          <Link href="/tasador">Tasador</Link>
-          <Link href="/admin">Admin</Link>
-        </nav>
-      </div>
-    </header>
-    <main className="container py-6">{children}</main>
-    <footer className="border-t"><div className="container py-8 text-xs text-gray-600 flex items-center justify-between">
-      <span>© {new Date().getFullYear()} B369</span><span>Estimaciones orientativas basadas en comparables online.</span>
-    </div></footer>
-  </body></html>)
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="es">
+      <body>
+        <header className="border-b bg-white">
+          <div className="container py-3 flex items-center gap-4">
+            <Link href="/" className="flex items-center gap-2">
+              <img src="/logo.svg" width="32" height="32" className="rounded-md" alt="B369" />
+              <span className="font-semibold tracking-wide">B369 · Marketing Inmobiliario</span>
+            </Link>
+            <nav className="ml-auto text-sm flex gap-4">
+              <Link href="/">Inicio</Link>
+              <Link href="/resultados">Resultados</Link>
+              <Link href="/tasador">Tasador</Link>
+              <Link href="/admin" className="text-blue-600">Admin</Link>
+            </nav>
+          </div>
+        </header>
+        <main className="container py-6">{children}</main>
+        <footer className="border-t">
+          <div className="container py-8 text-xs text-gray-600 flex items-center justify-between">
+            <span>© {new Date().getFullYear()} B369</span>
+            <span>Estimaciones orientativas basadas en comparables online.</span>
+          </div>
+        </footer>
+      </body>
+    </html>
+  )
 }
