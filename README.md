@@ -1,23 +1,20 @@
 
-# b369-ai — v5-lite (Next.js + Tailwind)
+# b369-ai — v6 (Next.js + Tailwind, Netlify-stable)
 
 ## Local
-```bash
-npm install
+npm ci || npm install
 npm run dev
-```
+
+## Build / Run (prod)
+npm run build
+npm start
 
 ## Netlify
 - Build: `npm run build`
 - Publish: `.next`
-- Env: `NODE_VERSION=20`
+- Env: `NODE_VERSION=20.19.5`
+- Plugin: `@netlify/plugin-nextjs` (incluido en `devDependencies` y activado en `netlify.toml`)
 
-## Reemplazar en repo existente
-```bash
-git clone https://github.com/TU_USUARIO/b369-ai.git
-cd b369-ai
-# Copia TODO el contenido del zip dentro (NO borres .git/)
-git add .
-git commit -m "replace with v5-lite"
-git push origin main
-```
+### Estabilidad
+- Páginas interactivas marcadas `'use client'`: `/resultados`, `/tasador`.
+- `package-lock.json` + `.nvmrc` incluidos para builds deterministas.
