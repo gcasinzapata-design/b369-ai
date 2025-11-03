@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -11,13 +10,23 @@ type Item = {
 function toCSV(rows: Item[]){
   const headers = ['id','titulo','precio','moneda','m2','habitaciones','fuente','url']
   const esc = (v:any)=>(''+(v??'')).replace(/"/g,'""')
+<<<<<<< HEAD
   return [headers.join(',')].concat(rows.map(r=>headers.map(h=>`"${esc((r as any)[h])}"`).join(','))).join('\n')
+=======
+  return [headers.join(',')].concat(
+    rows.map(r=>headers.map(h=>`"${esc((r as any)[h])}"`).join(','))
+  ).join('\n')
+>>>>>>> 498bff203ccdfeec93abf50005e4921202812e2d
 }
 
 export default function Resultados(){
   const [items, setItems] = useState<Item[]>([])
   useEffect(()=>{ fetch('/mock.json').then(r=>r.json()).then(setItems) },[])
+<<<<<<< HEAD
   const exportCSV = ()=>{
+=======
+  const exportCSV = () => {
+>>>>>>> 498bff203ccdfeec93abf50005e4921202812e2d
     const csv = toCSV(items)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)

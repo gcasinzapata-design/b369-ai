@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -81,10 +80,17 @@ export default function Tasador(){
           {out && (
             <div className="space-y-2 text-sm">
               <div className="flex flex-wrap gap-2">
+<<<<<<< HEAD
                 <span className="badge">Estimado: ${'{'}out.estimado.toLocaleString(){'}'}</span>
                 <span className="badge">Rango: ${'{'}out.rango_confianza[0].toLocaleString(){'}'} – ${'{'}out.rango_confianza[1].toLocaleString(){'}'}</span>
                 <span className="badge">Precio m² zona: ${'{'}out.precio_m2_zona.toLocaleString(){'}'}</span>
                 <span className="badge">Comparables: {'{'}out.comparables.length{'}'}</span>
+=======
+                <span className="badge">Estimado: ${out.estimado.toLocaleString()}</span>
+                <span className="badge">Rango: ${out.rango_confianza[0].toLocaleString()} – ${out.rango_confianza[1].toLocaleString()}</span>
+                <span className="badge">Precio m² zona: ${out.precio_m2_zona.toLocaleString()}</span>
+                <span className="badge">Comparables: {out.comparables.length}</span>
+>>>>>>> 498bff203ccdfeec93abf50005e4921202812e2d
               </div>
             </div>
           )}

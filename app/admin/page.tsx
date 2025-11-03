@@ -1,1 +1,13 @@
-export default function Admin(){return (<div className='space-y-4'><h1 className='text-2xl font-semibold'>Dashboard Admin</h1><div className='grid md:grid-cols-4 gap-3'><div className='stat'><b>Consultas hoy</b><div className='text-2xl'>42</div></div><div className='stat'><b>Tasaciones hoy</b><div className='text-2xl'>18</div></div><div className='stat'><b>Latencia p50</b><div className='text-2xl'>280 ms</div></div><div className='stat'><b>Errores 5xx</b><div className='text-2xl'>0</div></div></div></div>)}
+export default function Admin(){
+  return (
+    <div className="space-y-4">
+      <h1 className="text-2xl font-semibold">Dashboard Admin</h1>
+      <div className="grid md:grid-cols-4 gap-3">
+        <div className="stat"><b>Consultas hoy</b><div className="text-2xl">42</div></div>
+        <div className="stat"><b>Tasaciones hoy</b><div className="text-2xl">18</div></div>
+        <div className="stat"><b>Latencia p50</b><div className="text-2xl">280 ms</div></div>
+        <div className="stat"><b>Errores 5xx</b><div className="text-2xl">0</div></div>
+      </div>
+    </div>
+  )
+}
