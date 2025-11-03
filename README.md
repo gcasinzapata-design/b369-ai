@@ -1,0 +1,1 @@
+# B369 v4: Deep-link tasar + CSV export\nSube a Netlify. Variables: ENABLE_SCRAPING=true para activar scrapers.
