@@ -1,9 +1,10 @@
-<<<<<<< HEAD
+// next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  experimental: { appDir: true },
+  // No cambies nada aquí hasta que el deploy pase
+  // Si luego agregamos mapas/scraping, ajustamos aquí con calma
+};
 
-/** @type {import('next').NextConfig} */
-const nextConfig = { experimental: { appDir: true }, reactStrictMode: true }
-module.exports = nextConfig
-=======
-/** @type {import('next').NextConfig} */
-module.exports = { experimental: { appDir: true } }
->>>>>>> 498bff203ccdfeec93abf50005e4921202812e2d
+module.exports = nextConfig;
