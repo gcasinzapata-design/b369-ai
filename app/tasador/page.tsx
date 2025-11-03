@@ -1,14 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
-type Comparable = {
-  id: string
-  titulo: string
-  precio: number
-  m2: number
-}
+type Comparable = { id: string; titulo: string; precio: number; m2: number }
 
 function median(arr: number[]) {
   const s = [...arr].sort((a, b) => a - b)
@@ -16,8 +14,9 @@ function median(arr: number[]) {
   return s.length ? (s.length % 2 ? s[i] : (s[i - 1] + s[i]) / 2) : 2000
 }
 
-export default function Tasador() {
+function TasadorInner() {
   const sp = useSearchParams()
+
   const [form, setForm] = useState({
     direccion: 'Av. La Paz 123, Miraflores',
     area_m2: 85,
@@ -121,10 +120,7 @@ export default function Tasador() {
               type="number"
               value={form.antiguedad_anos}
               onChange={(e) =>
-                setForm({
-                  ...form,
-                  antiguedad_anos: Number(e.target.value)
-                })
+                setForm({ ...form, antiguedad_anos: Number(e.target.value) })
               }
             />
           </label>
@@ -160,28 +156,36 @@ export default function Tasador() {
         <div className="card p-4">
           <h2 className="font-semibold mb-2">Resultado</h2>
 
-          {!out && (
-            <p className="text-sm text-gray-600">Completa los datos y calcula.</p>
-          )}
+        {!out && (
+          <p className="text-sm text-gray-600">Completa los datos y calcula.</p>
+        )}
 
-          {out && (
-            <div className="space-y-2 text-sm">
-              <div className="flex flex-wrap gap-2">
-                <span className="badge">
-                  Estimado: {'$' + out.estimado.toLocaleString()}
-                </span>
-                <span className="badge">
-                  Rango: {'$' + out.rango_confianza[0].toLocaleString()} – {'$' + out.rango_confianza[1].toLocaleString()}
-                </span>
-                <span className="badge">
-                  Precio m² zona: {'$' + out.precio_m2_zona.toLocaleString()}
-                </span>
-                <span className="badge">Comparables: {out.comparables.length}</span>
-              </div>
+        {out && (
+          <div className="space-y-2 text-sm">
+            <div className="flex flex-wrap gap-2">
+              <span className="badge">
+                Estimado: {'$' + out.estimado.toLocaleString()}
+              </span>
+              <span className="badge">
+                Rango: {'$' + out.rango_confianza[0].toLocaleString()} – {'$' + out.rango_confianza[1].toLocaleString()}
+              </span>
+              <span className="badge">
+                Precio m² zona: {'$' + out.precio_m2_zona.toLocaleString()}
+              </span>
+              <span className="badge">Comparables: {out.comparables.length}</span>
             </div>
-          )}
+          </div>
+        )}
         </div>
       </div>
     </div>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-6">Cargando tasador…</div>}>
+      <TasadorInner />
+    </Suspense>
   )
 }
