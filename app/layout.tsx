@@ -1,10 +1,16 @@
+import './globals.css'
 import Link from 'next/link'
+
+export const metadata = {
+  title: 'B369 · Agente IA Inmobiliario',
+  description: 'Buscador y Tasador con comparables cercanos (demo funcional).'
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
       <body>
-        <header className="border-b bg-white">
+        <header className="nav">
           <div className="container py-3 flex items-center gap-4">
             <Link href="/" className="flex items-center gap-2">
               <img src="/logo.svg" width="32" height="32" className="rounded-md" alt="B369" />
@@ -19,10 +25,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         <main className="container py-6">{children}</main>
-        <footer className="border-t">
+        <footer className="site">
           <div className="container py-8 text-xs text-gray-600 flex items-center justify-between">
             <span>© {new Date().getFullYear()} B369</span>
-            <span>Estimaciones orientativas basadas en comparables online.</span>
+            <span>Estimaciones orientativas basadas en comparables online (demo).</span>
           </div>
         </footer>
       </body>
