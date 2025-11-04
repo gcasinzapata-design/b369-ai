@@ -1,5 +1,4 @@
 'use client'
-
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import ChatAgent from '../components/ChatAgent'
@@ -26,7 +25,6 @@ export default function Resultados(){
   const [loading, setLoading] = useState(false)
 
   const buscar = async ()=>{
-    // Validaciones mínimas:
     if(!filtros.distrito || filtros.distrito.length<3) return setError('Distrito es obligatorio.')
     if(!filtros.areaMin || filtros.areaMin<10) return setError('Área mínima debe ser ≥ 10 m².')
     if(!filtros.precioMax || filtros.precioMax<1000) return setError('Precio máximo inválido.')
