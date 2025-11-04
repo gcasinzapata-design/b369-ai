@@ -1,59 +1,50 @@
-// app/api/search/route.js
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-async function loadMock() {
+async function loadMock(){ 
   const file = path.join(process.cwd(), 'public', 'mock.json')
-  const raw = await fs.readFile(file, 'utf8')
-  return JSON.parse(raw)
+  return JSON.parse(await fs.readFile(file, 'utf8'))
 }
 
-function parseQuery(q = '') {
-  const text = (q || '').toLowerCase()
-  const distrito =
-    /miraflores/.test(text) ? 'miraflores' :
-    /surco/.test(text) ? 'surco' : null
-
-  const habMatch = text.match(/(\d+)\s*(hab|habitaciones?)/)
-  const hab = habMatch ? Number(habMatch[1]) : null
-
-  const mar = /mar|vista al mar|oc[eé]ano/.test(text)
-  return { distrito, hab, mar }
+async function geocode(addr){
+  const base = process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org'
+  const url = `${base}/search?format=json&q=${encodeURIComponent(addr)}&limit=1`
+  const r = await fetch(url, { headers: { 'User-Agent': 'b369-ai/1.0 (netlify)' } })
+  if (!r.ok) return null
+  const a = await r.json()
+  if (!a?.length) return null
+  return { lat: Number(a[0].lat), lon: Number(a[0].lon) }
 }
 
-function applyFilters(rows, q) {
-  const { distrito, hab, mar } = parseQuery(q)
-  let out = rows
-  if (distrito) out = out.filter(r => (r.direccion || '').toLowerCase().includes(distrito))
-  if (hab) out = out.filter(r => (r.habitaciones || 0) >= hab)
-  if (mar) out = out.filter(r => (r.titulo + ' ' + (r.direccion || '')).toLowerCase().includes('mar'))
-  return out
+function passFilters(r, f){
+  if (f.distrito && !(r.direccion||'').toLowerCase().includes(f.distrito.toLowerCase())) return false
+  if (f.minArea && (r.m2||0) < f.minArea) return false
+  if (f.minHab && (r.habitaciones||0) < f.minHab) return false
+  if (f.maxPrecio && (r.precio||0) > f.maxPrecio) return false
+  return true
 }
 
-export async function GET(req) {
-  try {
-    const url = new URL(req.url)
-    const q = url.searchParams.get('q') || ''
-    const data = await loadMock()
-    const items = applyFilters(data, q)
-    return new Response(JSON.stringify({ ok: true, items }), {
-      headers: { 'content-type': 'application/json' }
-    })
-  } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: e?.message || 'error' }), { status: 500 })
-  }
-}
+export async function POST(req){
+  try{
+    const body = await req.json().catch(()=>({}))
+    const q = (body.q||'').toLowerCase()
+    const minArea = Number(body.minArea||0)
+    const minHab = Number(body.minHab||0)
+    const maxPrecio = Number(body.maxPrecio||0)
+    const distrito = body.distrito || (q.includes('miraflores')?'miraflores': q.includes('surco')?'surco': '')
 
-export async function POST(req) {
-  try {
-    const body = await req.json().catch(() => ({}))
-    const q = body?.q || ''
-    const data = await loadMock()
-    const items = applyFilters(data, q)
-    return new Response(JSON.stringify({ ok: true, items }), {
-      headers: { 'content-type': 'application/json' }
-    })
-  } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: e?.message || 'error' }), { status: 500 })
+    let items = await loadMock()
+    items = items.filter(r=>passFilters(r, {distrito, minArea, minHab, maxPrecio}))
+
+    // Geocode addresses for map pins (best effort)
+    const withCoords = await Promise.all(items.map(async it => {
+      if (it.lat && it.lon) return it
+      const g = it.direccion ? await geocode(it.direccion) : null
+      return g ? {...it, lat:g.lat, lon:g.lon} : it
+    }))
+
+    return new Response(JSON.stringify({ ok:true, items: withCoords }), { headers: { 'content-type':'application/json' } })
+  }catch(e){
+    return new Response(JSON.stringify({ ok:false, error: e?.message || 'error' }), { status:500 })
   }
 }
