@@ -4,18 +4,14 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 type Pin = { lat:number; lon:number; label?:string }
-export default function MapClient({ pins=[], center }:{ pins:Pin[]; center?:{lat:number; lon:number} }){
-  const ref = useRef<HTMLDivElement>(null)
+export default function MapClient({ center, pins }:{ center: {lat:number;lon:number}|null, pins:Pin[] }){
+  const ref = useRef<HTMLDivElement|null>(null)
   useEffect(()=>{
     if(!ref.current) return
-    const map = L.map(ref.current).setView([center?.lat ?? -12.121, center?.lon ?? -77.03], 13)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(map)
-    pins.forEach(p=>{
-      if(Number.isFinite(p.lat) && Number.isFinite(p.lon)){
-        L.marker([p.lat, p.lon]).addTo(map).bindPopup(p.label || '')
-      }
-    })
+    const map = L.map(ref.current).setView(center? [center.lat, center.lon] : [-12.121, -77.03], center? 13:12)
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{ maxZoom:19 }).addTo(map)
+    pins.forEach(p=> L.marker([p.lat,p.lon]).addTo(map).bindPopup(p.label||'Propiedad'))
     return ()=>{ map.remove() }
-  },[pins, center])
-  return <div className="w-full h-[520px] rounded-lg overflow-hidden" ref={ref}/>
+  },[center, pins])
+  return <div ref={ref} className="w-full h-full rounded-lg overflow-hidden"/>
 }
