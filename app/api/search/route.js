@@ -1,3 +1,4 @@
+// app/api/search/route.js
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import fs from 'node:fs/promises'
@@ -14,12 +15,12 @@ const BodySchema = z.object({
   filtros: z.object({
     distrito: z.string().min(3),
     areaMin: z.number().min(10),
-    habMin: z.number().min(0).default(0),
+    habMin: z.number().min(0),
     precioMax: z.number().min(0)
   })
 })
 
-const memCache = new Map() // key -> { ts, data }
+const memCache = new Map()
 
 export async function POST(req){
   const started = Date.now()
@@ -27,13 +28,13 @@ export async function POST(req){
     const body = await req.json().catch(()=> ({}))
     const input = BodySchema.parse(body)
 
+    const FEEDS_MODE = String(process.env.FEEDS_MODE || 'true').toLowerCase() === 'true'
     const ENABLE_SCRAPING = String(process.env.ENABLE_SCRAPING || '').toLowerCase() === 'true'
-    const FEEDS_MODE = String(process.env.FEEDS_MODE || '').toLowerCase() === 'true'
     const FEEDS_LIMIT = Number(process.env.FEEDS_LIMIT || 40)
 
     const key = JSON.stringify(input)
     const hit = memCache.get(key)
-    if(hit && (Date.now()-hit.ts)< 5*60_000){ // 5 min
+    if(hit && (Date.now()-hit.ts) < 5*60_000){
       await logEvent('search_cache_hit', { tookMs: Date.now()-started })
       return NextResponse.json({ ok:true, ...hit.data })
     }
@@ -47,15 +48,14 @@ export async function POST(req){
       items = await scrapeAll({ q, enable:true, limitPerSite: FEEDS_LIMIT })
     } else {
       const file = path.join(process.cwd(),'public','mock.json')
-      const txt = await fs.readFile(file, 'utf8').catch(()=> '[]')
+      const txt = await fs.readFile(file,'utf8').catch(()=> '[]')
       items = JSON.parse(txt)
     }
 
-    // Normaliza
     items = (items||[]).map(normalizeItem)
 
-    // Geocodifica faltantes (hasta 25)
-    const need = items.filter(x=>(!x.lat || !x.lon) && x.direccion).slice(0,25)
+    // Geocode faltantes (hasta 25)
+    const need = items.filter(x=>(!x.lat||!x.lon) && x.direccion).slice(0,25)
     await Promise.allSettled(need.map(async x=>{
       const g = await geocode(x.direccion)
       if(g){ x.lat=g.lat; x.lon=g.lon }
@@ -67,25 +67,23 @@ export async function POST(req){
       const okDistrito = it.direccion ? it.direccion.toLowerCase().includes(distrito) : true
       const okArea = it.m2 >= filtros.areaMin
       const okHab = (it.habitaciones||0) >= filtros.habMin
-      const okPrecio = it.precio <= filtros.precioMax
+      const okPrecio = it.precio > 0 && it.precio <= filtros.precioMax
       return okDistrito && okArea && okHab && okPrecio
     })
 
-    // Centro
-    const withGeo = items.filter(x=>x.lat && x.lon)
-    let center = null
-    if (withGeo.length){
-      const lat = withGeo.reduce((s,x)=>s+x.lat,0)/withGeo.length
-      const lon = withGeo.reduce((s,x)=>s+x.lon,0)/withGeo.length
-      center = { lat, lon }
-    }
+    // Centro del mapa
+    const withGeo = items.filter(x=>x.lat&&x.lon)
+    const center = withGeo.length
+      ? { lat: withGeo.reduce((s,x)=>s+x.lat,0)/withGeo.length,
+          lon: withGeo.reduce((s,x)=>s+x.lon,0)/withGeo.length }
+      : null
 
     const data = { items, center }
-    memCache.set(key, { ts: Date.now(), data })
-    await logEvent('search', { tookMs: Date.now()-started, count: items.length, mode: FEEDS_MODE?'feeds':'scrape' })
+    memCache.set(key, { ts:Date.now(), data })
+    await logEvent('search', { tookMs: Date.now()-started, count: items.length, mode: FEEDS_MODE?'feeds':(ENABLE_SCRAPING?'scrape':'mock') })
     return NextResponse.json({ ok:true, ...data })
   }catch(e){
-    await logEvent('search_error', { tookMs: Date.now()-started, error: String(e?.message||e) })
+    await logEvent('search_error', { tookMs: Date.now()-started, error:String(e?.message||e) })
     return NextResponse.json({ ok:false, error:String(e?.message||e) }, { status:400 })
   }
 }
