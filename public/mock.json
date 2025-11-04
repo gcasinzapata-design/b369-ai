@@ -1,7 +1,5 @@
 [
-  { "id":"1","titulo":"Departamento vista al mar","precio":210000,"moneda":"USD","m2":78,"habitaciones":2,"direccion":"Malecón 28 de Julio, Miraflores","fuente":"sample","url":"https://example.com/a" },
-  { "id":"2","titulo":"Flat remodelado cerca al parque","precio":185000,"moneda":"USD","m2":70,"habitaciones":2,"direccion":"Av. La Paz, Miraflores","fuente":"sample","url":"https://example.com/b" },
-  { "id":"3","titulo":"Casa amplia con jardín","precio":360000,"moneda":"USD","m2":160,"habitaciones":4,"direccion":"Calle Tarata, Miraflores","fuente":"sample","url":"https://example.com/c" },
-  { "id":"4","titulo":"Dúplex moderno con terraza","precio":245000,"moneda":"USD","m2":95,"habitaciones":3,"direccion":"Berlín, Miraflores","fuente":"sample","url":"https://example.com/d" },
-  { "id":"5","titulo":"Departamento céntrico 1 hab","precio":120000,"moneda":"USD","m2":45,"habitaciones":1,"direccion":"Benavides, Miraflores","fuente":"sample","url":"https://example.com/e" }
+  { "id":"1", "titulo":"Departamento vista al mar", "precio":210000, "moneda":"USD", "m2":78, "habitaciones":2, "direccion":"Malecón 28 de Julio", "fuente":"sample", "url":"https://example.com/a" },
+  { "id":"2", "titulo":"Flat remodelado cerca al parque", "precio":185000, "moneda":"USD", "m2":70, "habitaciones":2, "direccion":"Av. La Paz", "fuente":"sample", "url":"https://example.com/b" },
+  { "id":"3", "titulo":"Casa amplia con jardín", "precio":360000, "moneda":"USD", "m2":160, "habitaciones":4, "direccion":"Calle Tarata", "fuente":"sample", "url":"https://example.com/c" }
 ]
