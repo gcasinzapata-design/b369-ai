@@ -7,12 +7,15 @@
     "build": "next build",
     "start": "next start"
   },
-  "engines": { "node": ">=20 <21" },
+  "engines": {
+    "node": ">=20 <21"
+  },
   "dependencies": {
     "next": "15.0.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "leaflet": "1.9.4"
+    "cheerio": "^1.0.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.9.1",
