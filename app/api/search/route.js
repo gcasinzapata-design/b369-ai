@@ -1,4 +1,3 @@
-// app/api/search/route.js
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import fs from 'node:fs/promises'
@@ -15,7 +14,7 @@ const BodySchema = z.object({
     areaMin: z.number().min(10),
     habMin: z.number().min(0).default(0),
     precioMax: z.number().min(0)
-  }).optional()
+  })
 })
 
 export async function POST(req){
@@ -23,9 +22,8 @@ export async function POST(req){
     const body = await req.json().catch(()=> ({}))
     const input = BodySchema.parse(body)
 
-    const ENABLE_SCRAPING = process.env.ENABLE_SCRAPING === 'true'
-    const q = input.q
-    const filtros = input.filtros
+    const ENABLE_SCRAPING = String(process.env.ENABLE_SCRAPING || '').toLowerCase() === 'true'
+    const q = input.q, filtros = input.filtros
 
     // 1) Fuente: scraping o mock
     let items = []
@@ -47,19 +45,17 @@ export async function POST(req){
       if(g){ x.lat=g.lat; x.lon=g.lon }
     }))
 
-    // 4) Filtros obligatorios si vienen
-    if (filtros){
-      const distrito = filtros.distrito.toLowerCase()
-      items = items.filter(it=>{
-        const okDistrito = it.direccion ? it.direccion.toLowerCase().includes(distrito) : true
-        const okArea = it.m2 >= filtros.areaMin
-        const okHab = (it.habitaciones||0) >= filtros.habMin
-        const okPrecio = it.precio <= filtros.precioMax
-        return okDistrito && okArea && okHab && okPrecio
-      })
-    }
+    // 4) Filtros obligatorios
+    const distrito = filtros.distrito.toLowerCase()
+    items = items.filter(it=>{
+      const okDistrito = it.direccion ? it.direccion.toLowerCase().includes(distrito) : true
+      const okArea = it.m2 >= filtros.areaMin
+      const okHab = (it.habitaciones||0) >= filtros.habMin
+      const okPrecio = it.precio <= filtros.precioMax
+      return okDistrito && okArea && okHab && okPrecio
+    })
 
-    // 5) Centro aproximado (si hay coords)
+    // 5) Centro
     const withGeo = items.filter(x=>x.lat && x.lon)
     let center = null
     if (withGeo.length){
