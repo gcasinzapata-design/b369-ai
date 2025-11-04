@@ -1,90 +1,98 @@
-import fs from 'node:fs/promises'
-import path from 'node:path'
+// app/api/estimate/route.js
+import { NextResponse } from 'next/server'
+import { scrapeAll } from '../../../lib/scrape/providers.js'
 
-const R_EARTH = 6371
-function haversine(lat1, lon1, lat2, lon2){
-  const dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2
-  return 2*R_EARTH*Math.asin(Math.sqrt(a))
+function percentile(arr, p) {
+  if (!arr.length) return 0
+  const s = [...arr].sort((a, b) => a - b)
+  const idx = Math.floor((p / 100) * (s.length - 1))
+  return s[idx]
 }
-function median(arr){ if(!arr.length) return 2000; const s=[...arr].sort((a,b)=>a-b); const i=Math.floor(s.length/2); return s.length%2?s[i]:(s[i-1]+s[i])/2 }
 
-async function geocode(addr){
+async function geocode(address) {
   const base = process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org'
-  const url = `${base}/search?format=json&q=${encodeURIComponent(addr)}&limit=1`
-  const r = await fetch(url, { headers: { 'User-Agent': 'b369-ai/1.0 (netlify)' } })
-  if(!r.ok) return null; const a = await r.json(); if(!a?.length) return null
-  return { lat: Number(a[0].lat), lon: Number(a[0].lon) }
+  const url = `${base}/search?format=json&q=${encodeURIComponent(address)}&limit=1`
+  const r = await fetch(url, { headers: { 'User-Agent': 'B369AI/1.0 (contact: admin@b369.ai)' } })
+  if (!r.ok) return null
+  const j = await r.json()
+  if (!Array.isArray(j) || !j[0]) return null
+  const { lat, lon, display_name } = j[0]
+  return { lat: Number(lat), lon: Number(lon), display_name }
 }
-async function loadMock(){
-  const file = path.join(process.cwd(), 'public', 'mock.json')
-  return JSON.parse(await fs.readFile(file, 'utf8'))
-}
 
-export async function POST(req){
-  try{
-    const b = await req.json()
-    const tipo = b?.tipo==='casa'?'casa':'departamento'
-    const area_m2 = Math.max(1, Number(b?.area_m2||80))
-    const antiguedad_anos = Number(b?.antiguedad_anos||0)
-    const vista_mar = !!b?.vista_mar
-    const habitaciones = Number(b?.habitaciones||0)
-    const banos = Number(b?.banos||0)
-    const estacionamientos = Number(b?.estacionamientos||0)
+export async function POST(req) {
+  try {
+    const body = await req.json()
+    const {
+      direccion,
+      tipo,
+      area_m2,
+      antiguedad_anos,
+      vista_mar,
+      habitaciones,
+      banos,
+      estacionamientos
+    } = body || {}
 
-    const g = b?.direccion ? await geocode(b.direccion) : null
-
-    let comps = await loadMock()
-    // Si tenemos coordenadas, priorizamos radio 3km
-    if (g){
-      // si tus comparables reales tienen lat/lon, aquí filtras por distancia
-      comps = await Promise.all(comps.map(async c=>{
-        if (c.lat && c.lon) return c
-        if (c.direccion){
-          const cg = await geocode(c.direccion)
-          return cg ? {...c, lat: cg.lat, lon: cg.lon} : c
-        }
-        return c
-      }))
-      comps = comps.filter(c => (c.lat && c.lon) ? haversine(g.lat,g.lon,c.lat,c.lon) <= 3.0 : true)
+    if (!direccion || !area_m2 || !tipo) {
+      return NextResponse.json({ ok: false, error: 'Faltan campos obligatorios (direccion, area_m2, tipo)' }, { status: 400 })
     }
 
-    // afinidad por características
-    comps = comps.filter(c=>{
-      const okArea = !c.m2 || Math.abs(c.m2 - area_m2) <= area_m2*0.35
-      const okHab = !c.habitaciones || (habitaciones ? Math.abs(c.habitaciones - habitaciones) <= 1 : true)
-      return okArea && okHab
+    const geo = await geocode(direccion).catch(() => null)
+    const districtHint = geo?.display_name?.split(',')?.[1]?.trim() || ''
+
+    const ENABLE_SCRAPING = process.env.ENABLE_SCRAPING === 'true'
+
+    // Construimos una query “suave” usando pista del distrito y tipo + área
+    const q = `${tipo} ${districtHint} ${Math.max(40, Math.min(200, Number(area_m2)))}m2`
+    const comps = await scrapeAll({
+      q,
+      minArea: Math.max(30, Number(area_m2) * 0.7),
+      minRooms: habitaciones || 1,
+      district: districtHint || undefined,
+      maxPrice: undefined,
+      enable: ENABLE_SCRAPING
     })
 
-    // toma hasta 40 comps
-    comps = comps.slice(0, 40)
+    // Normalizamos comparables por proximidad a área y filtros simples
+    const filtered = comps
+      .filter(c => c.m2 && c.precio && c.m2 > 0)
+      .filter(c => !habitaciones || (c.habitaciones || 0) >= habitaciones)
+      .filter(c => !banos || (c.banos || 0) >= banos)
 
-    const pM2 = median(comps.filter(c=>c.m2>0).map(c=>c.precio/c.m2))
+    // Orden por |m2 - área_m2|
+    filtered.sort((a, b) => Math.abs(a.m2 - area_m2) - Math.abs(b.m2 - area_m2))
+
+    const top = filtered.slice(0, 40)
+    const pm2 = top.map(c => c.precio / c.m2).filter(n => Number.isFinite(n))
+    if (!pm2.length) {
+      return NextResponse.json({ ok: false, error: 'No se hallaron comparables suficientes' }, { status: 404 })
+    }
+
+    const p25 = percentile(pm2, 25)
+    const p50 = percentile(pm2, 50)
+    const p75 = percentile(pm2, 75)
+
+    // Ajustes, muy básicos (mejorables con modelo)
     let mult = 1.0
-    if (tipo==='casa') mult += 0.05
-    if (vista_mar) mult += 0.10
-    if (antiguedad_anos > 25) mult -= 0.10
-    if (antiguedad_anos > 0 && antiguedad_anos < 5) mult += 0.05
-    if (habitaciones >= 3) mult += 0.03
-    if (habitaciones >= 4) mult += 0.02
-    if (banos >= 2) mult += 0.02
-    if (banos >= 3) mult += 0.02
-    if (estacionamientos >= 1) mult += 0.02
+    if (tipo === 'casa') mult += 0.04
+    if (vista_mar) mult += 0.08
+    if (antiguedad_anos > 25) mult -= 0.08
+    if (antiguedad_anos < 5) mult += 0.03
     if (estacionamientos >= 2) mult += 0.02
 
-    const estimado = Math.round(pM2 * area_m2 * mult)
-    const rango = Math.round(estimado * 0.08)
+    const precio_m2_zona = Math.round(p50)
+    const estimado = Math.round(precio_m2_zona * Number(area_m2) * mult)
+    const rango = Math.round(estimado * 0.1)
 
-    return new Response(JSON.stringify({
-      ok:true,
+    return NextResponse.json({
+      ok: true,
       estimado,
-      rango_confianza:[estimado-rango, estimado+rango],
-      precio_m2_zona: Math.round(pM2),
-      comparables: comps
-    }), { headers: { 'content-type':'application/json' } })
-  }catch(e){
-    return new Response(JSON.stringify({ ok:false, error: e?.message || 'error' }), { status:500 })
+      rango_confianza: [estimado - rango, estimado + rango],
+      precio_m2_zona,
+      comparables: top.map(c => ({ titulo: c.titulo, direccion: c.direccion, m2: c.m2, precio: c.precio, url: c.url, fuente: c.fuente }))
+    })
+  } catch (err) {
+    return NextResponse.json({ ok: false, error: String(err?.message || err) }, { status: 500 })
   }
 }
-
-export async function GET(){ return new Response(JSON.stringify({ok:true, ping:'estimate alive'}), { headers:{'content-type':'application/json'} }) }
