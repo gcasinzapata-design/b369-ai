@@ -1,22 +1,25 @@
 'use client'
+
 import { useState } from 'react'
 
 type Out = {
-  ok:boolean
-  estimado:number
-  rango_confianza:[number,number]
-  precio_m2_zona:number
-  comparables: Array<{ precio:number; m2:number; titulo?:string; direccion?:string; url?:string }>
+  ok: boolean
+  estimado: number
+  rango_confianza: [number, number]
+  precio_m2_zona: number
+  comparables: Array<{ precio:number; m2:number; titulo?:string; direccion?:string }>
+  note?: string
 }
 
 export default function Tasador(){
   const [form,setForm] = useState({
-    direccion:'Av. La Paz 123, Miraflores',
+    direccion:'Av. La Paz 123',
+    district:'miraflores',
     tipo:'departamento',
-    areaConstruida_m2:85,     // OBLIGATORIA
-    areaTerreno_m2:0,         // opcional
+    areaConstruida_m2:85,         // OBLIGATORIO
+    areaTerreno_m2:0,            // opcional (para casa)
     antiguedad_anos:8,
-    vista_mar:true,
+    vista_mar:false,
     habitaciones:2,
     banos:2,
     estacionamientos:1
@@ -28,13 +31,20 @@ export default function Tasador(){
   const calc = async ()=>{
     setLoading(true); setError(null); setOut(null)
     try{
+      if (!form.areaConstruida_m2 || !form.direccion) {
+        throw new Error('Ingresa dirección y área construida (m²).')
+      }
       const res = await fetch('/api/estimate', {
         method: 'POST',
         headers: { 'Content-Type':'application/json' },
         body: JSON.stringify(form)
       })
-      const data = await res.json()
-      if(!res.ok || !data.ok) throw new Error(data.error || 'Error en estimación')
+      if(!res.ok){
+        const txt = await res.text()
+        throw new Error(`/api/estimate ${res.status} – ${txt}`)
+      }
+      const data = await res.json() as Out
+      if(!data.ok && !('estimado' in data)) throw new Error('Estimador respondió error')
       setOut(data)
     }catch(e:any){
       setError(e?.message || 'No se pudo calcular')
@@ -48,8 +58,11 @@ export default function Tasador(){
       <div className="card p-4 space-y-3">
         <h1 className="text-xl font-semibold">Tasador (por ubicación)</h1>
         <div className="grid grid-cols-3 gap-3">
-          <label className="label col-span-3">Dirección
+          <label className="label col-span-2">Dirección
             <input className="input" value={form.direccion} onChange={e=>setForm({...form, direccion:e.target.value})}/>
+          </label>
+          <label className="label">Distrito
+            <input className="input" value={form.district} onChange={e=>setForm({...form, district:e.target.value})}/>
           </label>
           <label className="label">Tipo
             <select className="input" value={form.tipo} onChange={e=>setForm({...form, tipo:e.target.value})}>
@@ -59,7 +72,7 @@ export default function Tasador(){
           <label className="label">Área construida (m²)
             <input className="input" type="number" value={form.areaConstruida_m2} onChange={e=>setForm({...form, areaConstruida_m2:Number(e.target.value)})}/>
           </label>
-          <label className="label">Área terreno (m²)
+          <label className="label">Área terreno (m²) (opcional)
             <input className="input" type="number" value={form.areaTerreno_m2} onChange={e=>setForm({...form, areaTerreno_m2:Number(e.target.value)})}/>
           </label>
           <label className="label">Antigüedad
@@ -92,6 +105,7 @@ export default function Tasador(){
           {!out && !error && <p className="text-sm text-gray-600">Completa los datos y calcula.</p>}
           {out && (
             <div className="space-y-2 text-sm">
+              {out.note && <div className="text-amber-700">⚠ {out.note}</div>}
               <div className="flex flex-wrap gap-2">
                 <span className="badge">Estimado: ${out.estimado.toLocaleString()}</span>
                 <span className="badge">Rango: ${out.rango_confianza[0].toLocaleString()} – ${out.rango_confianza[1].toLocaleString()}</span>
@@ -99,12 +113,7 @@ export default function Tasador(){
                 <span className="badge">Comparables: {out.comparables.length}</span>
               </div>
               <ul className="list-disc pl-5">
-                {out.comparables.map((c, i)=>(
-                  <li key={i}>
-                    {c.titulo || 'Comparable'} — {c.m2} m² · ${c.precio.toLocaleString()}
-                    {c.url && <> · <a className="text-blue-600" href={c.url} target="_blank">ver</a></>}
-                  </li>
-                ))}
+                {out.comparables.map((c, i)=>(<li key={i}>{c.titulo || 'Comparable'} — {c.m2} m² · ${c.precio.toLocaleString()}</li>))}
               </ul>
             </div>
           )}
