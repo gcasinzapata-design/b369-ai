@@ -4,9 +4,6 @@ import Link from 'next/link'
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <head>
-        <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-      </head>
       <body>
         <header className="border-b bg-white">
           <div className="container py-3 flex items-center gap-4">
