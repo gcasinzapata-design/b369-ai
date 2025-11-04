@@ -3,7 +3,7 @@ import { useState } from 'react'
 
 export default function ChatAgent({ context=[] }:{ context:any[] }){
   const [msgs, setMsgs] = useState<{role:'user'|'assistant', content:string}[]>([
-    { role:'assistant', content:'Hola, soy tu agente inmobiliario IA. ¿Qué buscas exactamente? Puedo sugerirte zonas, rangos y negociar filtros.'}
+    { role:'assistant', content:'Hola, soy tu agente inmobiliario IA. Dime distrito, área mínima y presupuesto y te afino la búsqueda.'}
   ])
   const [input, setInput] = useState('')
   const send = async ()=>{
