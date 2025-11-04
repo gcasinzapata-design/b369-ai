@@ -1,89 +1,108 @@
 // app/api/search/route.js
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import { geocode } from '../../../lib/geo.js'
-import { normalizeItem } from '../../../lib/normalize.js'
-import { logEvent } from '../../../lib/stats.js'
+import { extractFiltersFromText, normalizeNumberLike } from '../../../lib/normalize'
+import { geocodeAddress } from '../../../lib/geo'
+import { searchUrbania, searchAdondevivir, searchBabilonia, searchOLX, searchProperati } from '../../../lib/scrape/providers'
 
-let scrapeAll=null; try{ const m = await import('../../../lib/scrape/providers.js'); scrapeAll=m.scrapeAll }catch{}
-let feedsSearch=null; try{ const m = await import('../../../lib/scrape/feeds.js'); feedsSearch=m.feedsSearch }catch{}
+const ENABLE_SCRAPING = process.env.ENABLE_SCRAPING === '1'
 
 const BodySchema = z.object({
-  q: z.string().min(2),
-  filtros: z.object({
-    distrito: z.string().min(3),
-    areaMin: z.number().min(10),
-    habMin: z.number().min(0),
-    precioMax: z.number().min(0)
-  })
+  q: z.string().optional(),
+  district: z.string().optional(),
+  minArea: z.number().int().nonnegative().optional(),
+  minRooms: z.number().int().nonnegative().optional(),
+  maxPrice: z.number().int().nonnegative().optional(),
+  tipo: z.string().optional(),
+  limit: z.number().int().min(1).max(100).default(40)
 })
 
-const memCache = new Map()
+const g = globalThis
+if (!g.__searchCache) g.__searchCache = new Map()
 
-export async function POST(req){
-  const started = Date.now()
-  try{
-    const body = await req.json().catch(()=> ({}))
-    const input = BodySchema.parse(body)
+export async function POST(req) {
+  try {
+    const body = await req.json()
+    const parsed = BodySchema.safeParse({
+      ...body,
+      // normaliza numéricos si vinieron como string
+      minArea: typeof body?.minArea === 'string' ? normalizeNumberLike(body.minArea) : body?.minArea,
+      minRooms: typeof body?.minRooms === 'string' ? normalizeNumberLike(body.minRooms) : body?.minRooms,
+      maxPrice: typeof body?.maxPrice === 'string' ? normalizeNumberLike(body.maxPrice) : body?.maxPrice,
+    })
+    if (!parsed.success) {
+      return NextResponse.json({ ok:false, error:'invalid_body', issues: parsed.error.issues }, { status: 400 })
+    }
+    let { q='', district, minArea=0, minRooms=0, maxPrice=0, tipo, limit } = parsed.data
 
-    const FEEDS_MODE = String(process.env.FEEDS_MODE || 'true').toLowerCase() === 'true'
-    const ENABLE_SCRAPING = String(process.env.ENABLE_SCRAPING || '').toLowerCase() === 'true'
-    const FEEDS_LIMIT = Number(process.env.FEEDS_LIMIT || 40)
-
-    const key = JSON.stringify(input)
-    const hit = memCache.get(key)
-    if(hit && (Date.now()-hit.ts) < 5*60_000){
-      await logEvent('search_cache_hit', { tookMs: Date.now()-started })
-      return NextResponse.json({ ok:true, ...hit.data })
+    // si hay texto libre, extrae filtros
+    if (q) {
+      const ex = extractFiltersFromText(q)
+      district ||= ex.district || undefined
+      tipo ||= ex.tipo || undefined
+      maxPrice ||= ex.maxPrice || 0
+      minRooms ||= ex.minRooms || 0
+      minArea ||= ex.minArea || 0
     }
 
-    const { q, filtros } = input
+    // Cache key
+    const cacheKey = JSON.stringify({ q, district, minArea, minRooms, maxPrice, tipo, limit })
+    if (g.__searchCache.has(cacheKey)) {
+      return NextResponse.json({ ok:true, items: g.__searchCache.get(cacheKey) })
+    }
+
     let items = []
 
-    if (FEEDS_MODE && typeof feedsSearch==='function'){
-      items = await feedsSearch({ q, limit: FEEDS_LIMIT })
-    } else if (ENABLE_SCRAPING && typeof scrapeAll==='function'){
-      items = await scrapeAll({ q, enable:true, limitPerSite: FEEDS_LIMIT })
+    if (ENABLE_SCRAPING) {
+      // Prioridad de proveedores (como pediste)
+      const queries = [
+        searchUrbania({ q, district, minRooms, minArea, maxPrice, limit }),
+        searchAdondevivir({ q, district, minRooms, minArea, maxPrice, limit }),
+        searchBabilonia({ q, district, minRooms, minArea, maxPrice, limit }),
+        searchOLX({ q, district, minRooms, minArea, maxPrice, limit }),
+        searchProperati({ q, district, minRooms, minArea, maxPrice, limit }),
+      ]
+      const results = await Promise.allSettled(queries)
+      for (const r of results) if (r.status === 'fulfilled') items.push(...r.value)
     } else {
-      const file = path.join(process.cwd(),'public','mock.json')
-      const txt = await fs.readFile(file,'utf8').catch(()=> '[]')
-      items = JSON.parse(txt)
+      // Fallback offline/mocks si scraping off
+      // Nota: puedes enriquecerlo leyendo public/mock.json
+      try {
+        const res = await fetch(new URL('/mock.json', process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost').toString()).catch(()=>null)
+        if (res && res.ok) {
+          const mock = await res.json()
+          items = Array.isArray(mock) ? mock : []
+        }
+      } catch {}
     }
 
-    items = (items||[]).map(normalizeItem)
-
-    // Geocode faltantes (hasta 25)
-    const need = items.filter(x=>(!x.lat||!x.lon) && x.direccion).slice(0,25)
-    await Promise.allSettled(need.map(async x=>{
-      const g = await geocode(x.direccion)
-      if(g){ x.lat=g.lat; x.lon=g.lon }
-    }))
-
-    // Filtros obligatorios
-    const distrito = filtros.distrito.toLowerCase()
-    items = items.filter(it=>{
-      const okDistrito = it.direccion ? it.direccion.toLowerCase().includes(distrito) : true
-      const okArea = it.m2 >= filtros.areaMin
-      const okHab = (it.habitaciones||0) >= filtros.habMin
-      const okPrecio = it.precio > 0 && it.precio <= filtros.precioMax
-      return okDistrito && okArea && okHab && okPrecio
+    // Filtrado adicional y geocodificar cuando falten coords
+    items = items.filter((it) => {
+      if (minArea && it.m2 && it.m2 < minArea) return false
+      if (minRooms && typeof it.habitaciones === 'number' && it.habitaciones < minRooms) return false
+      if (maxPrice && it.precio && it.precio > maxPrice) return false
+      if (tipo && it.titulo && !it.titulo.toLowerCase().includes(tipo)) return false
+      if (district && it.direccion && !it.direccion.toLowerCase().includes(district.toLowerCase())) {
+        // si la dirección no menciona el distrito, lo toleramos porque muchos sitios no lo ponen
+      }
+      return true
     })
 
-    // Centro del mapa
-    const withGeo = items.filter(x=>x.lat&&x.lon)
-    const center = withGeo.length
-      ? { lat: withGeo.reduce((s,x)=>s+x.lat,0)/withGeo.length,
-          lon: withGeo.reduce((s,x)=>s+x.lon,0)/withGeo.length }
-      : null
+    // geocode aproximado para los que no traen lat/lon
+    for (const it of items.slice(0, limit)) {
+      if ((it.lat && it.lon) || !it.direccion) continue
+      const geo = await geocodeAddress(it.direccion, district || '')
+      if (geo) { it.lat = geo.lat; it.lon = geo.lon }
+    }
 
-    const data = { items, center }
-    memCache.set(key, { ts:Date.now(), data })
-    await logEvent('search', { tookMs: Date.now()-started, count: items.length, mode: FEEDS_MODE?'feeds':(ENABLE_SCRAPING?'scrape':'mock') })
-    return NextResponse.json({ ok:true, ...data })
-  }catch(e){
-    await logEvent('search_error', { tookMs: Date.now()-started, error:String(e?.message||e) })
-    return NextResponse.json({ ok:false, error:String(e?.message||e) }, { status:400 })
+    // recorta a límite
+    items = items.slice(0, limit)
+
+    // guarda cache simple (memoria cold-start friendly)
+    g.__searchCache.set(cacheKey, items)
+
+    return NextResponse.json({ ok:true, items })
+  } catch (e) {
+    return NextResponse.json({ ok:false, error: String(e?.message||e) }, { status: 500 })
   }
 }
