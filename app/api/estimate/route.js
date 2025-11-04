@@ -24,14 +24,11 @@ function percentile(arr, p) {
   const idx = Math.min(s.length-1, Math.max(0, Math.round((p/100)*(s.length-1))))
   return s[idx]
 }
-
 function dedupe(arr) {
-  const seen = new Set()
-  const out = []
+  const seen = new Set(), out=[]
   for (const x of arr) {
-    const key = x.id || x.url || (x.titulo || '') + (x.m2||'')
-    if (seen.has(key)) continue
-    seen.add(key); out.push(x)
+    const key = x.url || x.id || (x.titulo||'')+(x.m2||'')
+    if (seen.has(key)) continue; seen.add(key); out.push(x)
   }
   return out
 }
@@ -51,23 +48,21 @@ export async function POST(req) {
       maxKm, minComps
     } = parsed.data
 
-    // Geocode con múltiples estrategias
     const geo = await geocodeAddress(direccion, district || '')
     if (!geo) {
-      return NextResponse.json({ ok:false, error:'no_geocode', note:'No se pudo geolocalizar la dirección. Intenta “Av Precursores 537, Santiago de Surco, Lima”' }, { status: 400 })
+      return NextResponse.json({ ok:false, error:'no_geocode', note:'Intenta “Av Precursores 537, Santiago de Surco, Lima, Perú”.' }, { status: 400 })
     }
 
-    // Pide muchos comps y filtra por distancia
     let comps = []
-    let km = Math.max(0.8, maxKm)
-    for (let attempt=0; attempt<4 && comps.length<minComps; attempt++) {
+    let km = Math.max(1.0, maxKm)
+    for (let attempt=0; attempt<5 && comps.length<minComps; attempt++) {
       const res = await fetch(`${origin}/api/search`, {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           q: `${tipo} ${district||''}`,
           district,
-          minArea: Math.max(30, Math.round(areaConstruida_m2 * 0.7)),
+          minArea: Math.max(30, Math.round(areaConstruida_m2 * 0.65)), // más laxo
           minRooms: habitaciones || 0,
           maxPrice: 0,
           limit: 120
@@ -83,18 +78,19 @@ export async function POST(req) {
       })).filter(r => r.__dist <= km*1000)
 
       comps = dedupe(withDist)
-      if (comps.length < minComps) km *= 1.8
+      if (comps.length < minComps) km = km * 1.9
     }
 
     if (comps.length < 8) {
-      return NextResponse.json({ ok:true, estimado:0, rango_confianza:[0,0], precio_m2_zona:0, comparables: [], note:'Sin comparables suficientes cercanos (intenta otro distrito o bajar filtros).' })
+      return NextResponse.json({
+        ok:true, estimado:0, rango_confianza:[0,0], precio_m2_zona:0,
+        p25:0, p50:0, p75:0,
+        comparables: [],
+        note:'Sin comparables suficientes cercanos (baja filtros o prueba distrito contiguo).'
+      })
     }
 
     const pm2 = comps.map(c => (c.precio && c.m2) ? c.precio / c.m2 : 0).filter(x => x>0)
-    if (!pm2.length) {
-      return NextResponse.json({ ok:true, estimado:0, rango_confianza:[0,0], precio_m2_zona:0, comparables: [], note:'Comparables sin m2 válido' })
-    }
-
     const p25 = percentile(pm2, 25), p50 = percentile(pm2, 50), p75 = percentile(pm2, 75)
 
     let mult = 1
@@ -116,6 +112,9 @@ export async function POST(req) {
       estimado,
       rango_confianza:[lo,hi],
       precio_m2_zona: Math.round(p50),
+      p25: Math.round(p25),
+      p50: Math.round(p50),
+      p75: Math.round(p75),
       comparables: top
     })
   } catch (e) {
