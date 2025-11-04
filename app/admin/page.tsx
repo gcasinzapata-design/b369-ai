@@ -1,24 +1,48 @@
 'use client'
 import { useEffect, useState } from 'react'
 
+type S = { ok:boolean; uptimeSec:number; counts:Record<string,number>; lastErrors:{t:number;type:string;msg:string}[] }
+
 export default function Admin(){
-  const [health, setHealth] = useState<any>(null)
-  useEffect(()=>{
-    Promise.all([
-      fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ q:'depa miraflores', minArea:50 })}).then(r=>({search:r.status})).catch(()=>({search:'ERR'})),
-      fetch('/api/estimate').then(r=>({estimate:r.status})).catch(()=>({estimate:'ERR'}))
-    ]).then(([a,b])=>setHealth({...a,...b, node: process.env.NODE_VERSION || '20'}))
-  },[])
+  const [s, setS] = useState<S|null>(null)
+  const load = async ()=>{
+    const r = await fetch('/api/admin/stats')
+    const j = await r.json().catch(()=>null)
+    setS(j)
+  }
+  useEffect(()=>{ load(); const id=setInterval(load, 5000); return ()=>clearInterval(id) },[])
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Dashboard Admin</h1>
-      <div className="grid md:grid-cols-4 gap-3">
-        <div className="stat"><b>API /search</b><div className="text-2xl">{health?.search??'-'}</div></div>
-        <div className="stat"><b>API /estimate</b><div className="text-2xl">{health?.estimate??'-'}</div></div>
-        <div className="stat"><b>Node</b><div className="text-2xl">20</div></div>
-        <div className="stat"><b>Scraping</b><div className="text-2xl">{process.env.ENABLE_SCRAPING==='1'?'ON':'OFF'}</div></div>
+      <div className="brand-hero">
+        <h1 className="text-xl font-semibold">Admin · Salud del sistema</h1>
+        <p className="text-sm opacity-80">Búsquedas, tasaciones, errores y uptime.</p>
       </div>
-      <p className="text-sm text-gray-600">* Cuando quieras resultados 100% reales desde portales, activo <b>ENABLE_SCRAPING=1</b> y te paso los adapters Urbania/OLX (server-side, sin CORS).</p>
+
+      {!s && <div>Cargando…</div>}
+      {s && (
+        <>
+          <div className="grid md:grid-cols-3 gap-3">
+            <div className="stat">Uptime: <b>{s.uptimeSec}s</b></div>
+            <div className="stat">Búsquedas: <b>{s.counts.search}</b> (cache: {s.counts.search_cache_hit})</div>
+            <div className="stat">Tasaciones: <b>{s.counts.estimate}</b> (sin comps: {s.counts.estimate_no_comps})</div>
+          </div>
+
+          <div className="card p-3">
+            <h2 className="font-semibold mb-2">Errores recientes</h2>
+            {!s.lastErrors.length && <div className="text-sm text-gray-500">Sin errores.</div>}
+            {!!s.lastErrors.length && (
+              <ul className="text-sm space-y-1">
+                {s.lastErrors.map((e,i)=>(
+                  <li key={i} className="flex justify-between border-b py-1">
+                    <span>{new Date(e.t).toLocaleString()} — {e.type}</span>
+                    <span className="text-red-600">{e.msg}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
