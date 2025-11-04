@@ -1,7 +1,5 @@
-// app/api/agent/route.js
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
-
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 
 export async function POST(req){
@@ -15,18 +13,15 @@ export async function POST(req){
 
     const prompt = `
 Eres un asesor inmobiliario senior en Lima/Perú. Da respuestas concisas y accionables.
-Cuando sugieras cambios de filtros, usa razonamiento de mercado local.
-Contexto (listings actuales):
+Sugiere ajustar filtros si no hay matches. Si hay, sugiere 3 opciones concretas.
+Contexto de resultados:
 ${ctxText || '(sin contexto)'}
 `
-
     const client = new OpenAI({ apiKey: OPENAI_API_KEY })
-    const userLast = messages[messages.length-1]?.content || ''
-    const sysMsg = { role:'system', content: prompt }
     const chat = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       temperature: 0.2,
-      messages: [sysMsg, ...messages.map(m=>({ role:m.role, content:m.content }))]
+      messages: [{ role:'system', content: prompt }, ...messages]
     })
     const answer = chat.choices?.[0]?.message?.content || 'Sin respuesta'
     return NextResponse.json({ ok:true, answer })
