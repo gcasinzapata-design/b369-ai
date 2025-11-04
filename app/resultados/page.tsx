@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 
 type Item = {
-  id: string; titulo: string; precio: number; moneda: string; m2: number; habitaciones: number;
-  banos?: number; estacionamientos?: number; direccion?: string; fuente?: string; url?: string
+  id: string; titulo: string; precio: number; moneda: string; m2: number; habitaciones?: number; banos?: number; estacionamientos?: number; direccion?: string; fuente?: string; url?: string
 }
 
 function toCSV(rows: Item[]){
@@ -14,55 +13,33 @@ function toCSV(rows: Item[]){
 }
 
 export default function Resultados(){
+  const [q, setQ] = useState('')
   const [items, setItems] = useState<Item[]>([])
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string|undefined>(undefined)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const [q, setQ] = useState('Depa en Miraflores 2 hab, máx $250000')
-  const [filters, setFilters] = useState({
-    tipo: '' as ''|'casa'|'departamento',
-    min_m2: '' as number | '' ,
-    max_m2: '' as number | '' ,
-    habitaciones: '' as number | '' ,
-    banos: '' as number | '' ,
-  })
-
-  const runSearch = async (text: string) => {
-    setBusy(true); setErr(undefined)
+  const buscar = async ()=>{
+    setLoading(true); setError(null)
     try{
       const res = await fetch('/api/search', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          q: text,
-          filters: {
-            ...filters,
-            min_m2: filters.min_m2 || undefined,
-            max_m2: filters.max_m2 || undefined,
-            habitaciones: filters.habitaciones || undefined,
-            banos: filters.banos || undefined,
-            tipo: filters.tipo || undefined
-          }
-        })
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ q })
       })
-      if(!res.ok) throw new Error('API /api/search no respondió OK')
-      const json = await res.json()
-      setItems(json.items || [])
-    }catch(e:any){
-      setErr(e?.message || 'Error en búsqueda. Usando fallback de demo.')
-      // fallback: leer mock.json directo
-      try{
-        const r2 = await fetch('/mock.json'); const list = await r2.json()
-        setItems(list || [])
-      }catch{
-        setItems([])
+      if(!res.ok){
+        const t = await res.text()
+        throw new Error(`/api/search ${res.status} – ${t}`)
       }
+      const data = await res.json()
+      if(!data.ok) throw new Error(data.error || 'error')
+      setItems(data.items || [])
+    }catch(e:any){
+      setError(e?.message || 'Fallo la búsqueda')
+      setItems([])
     }finally{
-      setBusy(false)
+      setLoading(false)
     }
   }
-
-  useEffect(()=>{ runSearch(q) },[]) // carga inicial
 
   const exportCSV = ()=>{
     const csv = toCSV(items)
@@ -72,57 +49,15 @@ export default function Resultados(){
     URL.revokeObjectURL(url)
   }
 
-  const total = useMemo(()=> items.length, [items])
-
   return (
-    <div className="grid md:grid-cols-3 gap-6">
-      {/* IZQUIERDA: Chat simple */}
-      <div className="md:col-span-1">
-        <div className="card p-4 h-full flex flex-col">
-          <h2 className="text-lg font-semibold mb-2">Bot de Búsqueda (IA)</h2>
-          <p className="text-xs text-gray-600">Escribe en lenguaje natural (ej: “depa miraflores 2 hab máx $200000”).</p>
-          <div className="mt-3 flex gap-2">
-            <input className="input flex-1" value={q} onChange={e=>setQ(e.target.value)} placeholder="¿Qué estás buscando?"/>
-            <button className="btn btn-primary" onClick={()=>runSearch(q)} disabled={busy}>{busy?'Buscando…':'Buscar'}</button>
-          </div>
-          {err && <div className="mt-3 text-xs text-red-600">⚠ {err}</div>}
+    <div className="grid md:grid-cols-2 gap-6">
+      <div className="space-y-3">
+        <div className="card p-3 flex gap-2">
+          <input className="input flex-1" value={q} onChange={e=>setQ(e.target.value)} placeholder="¿Qué buscas? Ej: depa miraflores 2 hab vista mar"/>
+          <button className="btn btn-primary" onClick={buscar} disabled={loading}>{loading?'Buscando…':'Buscar'}</button>
+          <button className="btn btn-secondary" onClick={exportCSV} disabled={!items.length}>Exportar CSV</button>
         </div>
-      </div>
-
-      {/* DERECHA: Filtros + resultados */}
-      <div className="md:col-span-2 space-y-4">
-        <div className="card p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Filtros</h2>
-            <div className="text-sm text-gray-600">Resultados: <b>{total}</b></div>
-          </div>
-          <div className="grid sm:grid-cols-5 gap-3 mt-3">
-            <label className="label">Tipo
-              <select className="input" value={filters.tipo} onChange={e=>setFilters({...filters, tipo: e.target.value as any})}>
-                <option value="">(Todos)</option>
-                <option value="departamento">Departamento</option>
-                <option value="casa">Casa</option>
-              </select>
-            </label>
-            <label className="label">Min m²
-              <input className="input" type="number" value={String(filters.min_m2)} onChange={e=>setFilters({...filters, min_m2: e.target.value? Number(e.target.value): ''})}/>
-            </label>
-            <label className="label">Max m²
-              <input className="input" type="number" value={String(filters.max_m2)} onChange={e=>setFilters({...filters, max_m2: e.target.value? Number(e.target.value): ''})}/>
-            </label>
-            <label className="label">Habitaciones
-              <input className="input" type="number" value={String(filters.habitaciones)} onChange={e=>setFilters({...filters, habitaciones: e.target.value? Number(e.target.value): ''})}/>
-            </label>
-            <label className="label">Baños
-              <input className="input" type="number" value={String(filters.banos)} onChange={e=>setFilters({...filters, banos: e.target.value? Number(e.target.value): ''})}/>
-            </label>
-          </div>
-          <div className="mt-3 flex gap-2">
-            <button className="btn btn-primary" onClick={()=>runSearch(q)} disabled={busy}>{busy?'Aplicando…':'Aplicar'}</button>
-            <button className="btn btn-secondary" onClick={exportCSV}>Exportar CSV</button>
-          </div>
-        </div>
-
+        {error && <div className="text-sm text-red-600">{error}</div>}
         <div className="grid sm:grid-cols-2 gap-4">
           {items.map((it)=>(
             <article key={it.id} className="card overflow-hidden">
@@ -133,23 +68,26 @@ export default function Resultados(){
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-lg font-bold">{it.moneda==='USD'?'$':'S/ '}{it.precio.toLocaleString()}</span>
-                  <span className="text-sm">{it.m2} m² · {it.habitaciones} hab{typeof it.banos==='number' ? ` · ${it.banos} baños` : ''}</span>
+                  <span className="text-sm">{it.m2} m² · {it.habitaciones ?? '-'} hab</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="badge">{(it.fuente||'web').toUpperCase()}</span>
-                  <div className="flex gap-3">
+                  <div className="flex gap-2">
                     {it.url && <a href={it.url} target="_blank" className="text-blue-600">Anuncio →</a>}
-                    <a href={`/tasador?area_m2=${it.m2}&habitaciones=${it.habitaciones}&direccion=${encodeURIComponent(it.direccion || it.titulo)}`} className="text-emerald-700">Tasar →</a>
+                    <a href={`/tasador?area_m2=${it.m2}&direccion=${encodeURIComponent(it.direccion || it.titulo)}`} className="text-emerald-700">Tasar →</a>
                   </div>
                 </div>
               </div>
             </article>
           ))}
-          {items.length===0 && (
-            <div className="p-10 text-center text-sm text-gray-500 border rounded-xl">
-              No hay resultados con estos criterios. Ajusta la consulta o filtros.
-            </div>
-          )}
+          {!loading && !error && !items.length && <div className="text-sm text-gray-500">Sin resultados aún. Prueba: “depa miraflores 2 hab”</div>}
+        </div>
+      </div>
+
+      <div className="card p-2 h-[520px] flex items-center justify-center text-sm text-gray-500">
+        <div className="text-center">
+          <div className="font-semibold">Mapa (preview)</div>
+          <div>En producción: Leaflet + OSM</div>
         </div>
       </div>
     </div>
