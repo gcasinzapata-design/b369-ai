@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import dynamic from 'next/dynamic'
-
 const MapClient = dynamic(() => import('../components/MapClient'), { ssr:false })
 
 type Item = {
@@ -31,7 +30,6 @@ export default function Resultados(){
   const buscar = async ()=>{
     setLoading(true); setError(null)
     try{
-      // Validaciones obligatorias
       if (!district || !minArea || !minRooms || !maxPrice) {
         throw new Error('Completa distrito, área mínima, habitaciones mínimas y precio máximo.')
       }
@@ -114,7 +112,7 @@ export default function Resultados(){
               </div>
             </article>
           ))}
-          {!loading && !error && !items.length && <div className="text-sm text-gray-500">Sin resultados. Prueba bajar área mínima o subir precio máx, o cambiar distrito a Barranco/Surco/Jesús María.</div>}
+          {!loading && !error && !items.length && <div className="text-sm text-gray-500">Sin resultados. Prueba bajar área mínima o subir precio máx, o cambiar a Barranco/Surco/San Isidro.</div>}
         </div>
       </div>
 
