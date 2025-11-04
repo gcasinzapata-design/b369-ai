@@ -1,93 +1,133 @@
 // app/api/estimate/route.js
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { geocode, haversine, percentile, median } from '../../../lib/geo.js'
-import { normalizeItem } from '../../../lib/normalize.js'
-import { logEvent } from '../../../lib/stats.js'
+import { geocodeAddress, distMeters } from '../../../lib/geo'
 
-let scrapeAll=null; try{ const m = await import('../../../lib/scrape/providers.js'); scrapeAll=m.scrapeAll }catch{}
-let feedsSearch=null; try{ const m = await import('../../../lib/scrape/feeds.js'); feedsSearch=m.feedsSearch }catch{}
-
-const Body = z.object({
-  direccion: z.string().min(5),
-  tipo: z.enum(['departamento','casa']),
-  areaConstruida_m2: z.number().min(20),     // OBLIGATORIO
-  areaTerreno_m2: z.number().min(0).optional(),
-  antiguedad_anos: z.number().min(0).max(120).optional(),
+const BodySchema = z.object({
+  direccion: z.string().min(3),
+  district: z.string().optional(),
+  tipo: z.enum(['departamento','casa']).default('departamento'),
+  areaConstruida_m2: z.number().int().positive(), // OBLIGATORIO
+  areaTerreno_m2: z.number().int().nonnegative().optional(),
+  antiguedad_anos: z.number().int().nonnegative().optional(),
   vista_mar: z.boolean().optional(),
-  habitaciones: z.number().min(0).optional(),
-  banos: z.number().min(0).optional(),
-  estacionamientos: z.number().min(0).optional()
+  habitaciones: z.number().int().nonnegative().optional(),
+  banos: z.number().int().nonnegative().optional(),
+  estacionamientos: z.number().int().nonnegative().optional(),
+  maxKm: z.number().optional().default(2),
+  minComps: z.number().optional().default(40)
 })
 
-export async function POST(req){
-  const started = Date.now()
-  try{
-    const input = Body.parse(await req.json())
-    const FEEDS_MODE = String(process.env.FEEDS_MODE || 'true').toLowerCase() === 'true'
-    const ENABLE_SCRAPING = String(process.env.ENABLE_SCRAPING || '').toLowerCase() === 'true'
-    const FEEDS_LIMIT = Number(process.env.FEEDS_LIMIT || 40)
+function percentile(arr, p) {
+  if (!arr.length) return 0
+  const s = [...arr].sort((a,b)=>a-b)
+  const idx = Math.min(s.length-1, Math.max(0, Math.round((p/100)*(s.length-1))))
+  return s[idx]
+}
 
-    const g = await geocode(input.direccion)
-    if(!g) throw new Error('No se pudo geocodificar la dirección')
+export async function POST(req) {
+  try {
+    const body = await req.json()
+    const parsed = BodySchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json({ ok:false, error:'invalid_body', issues: parsed.error.issues }, { status: 400 })
+    }
+    const {
+      direccion, district, tipo,
+      areaConstruida_m2, areaTerreno_m2=0, antiguedad_anos=0, vista_mar=false,
+      habitaciones=0, banos=0, estacionamientos=0,
+      maxKm, minComps
+    } = parsed.data
 
-    let q = `${input.tipo} ${input.habitaciones||''} hab ${input.direccion}`
+    // Geocodificar inmueble objetivo
+    const geo = await geocodeAddress(direccion, district || '')
+    if (!geo) {
+      return NextResponse.json({ ok:false, error:'no_geocode' }, { status: 400 })
+    }
+
+    // Buscar comparables usando /api/search internamente con expansión de radio/distrito
+    // Como /api/search devuelve lat/lon aproximados, pedimos más y filtramos por distancia
     let comps = []
-    if (FEEDS_MODE && typeof feedsSearch==='function'){
-      comps = await feedsSearch({ q, limit: FEEDS_LIMIT })
-    } else if (ENABLE_SCRAPING && typeof scrapeAll==='function'){
-      comps = await scrapeAll({ q, enable:true, limitPerSite: FEEDS_LIMIT })
-    } else {
-      comps = []
+    let km = Math.max(0.8, maxKm) // arranca con 0.8km ~ 800m
+    for (let attempt=0; attempt<4 && comps.length<minComps; attempt++) {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/search`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          q: [tipo, district || ''].join(' '),
+          district,
+          minArea: Math.max(30, Math.round(areaConstruida_m2 * 0.7)),
+          minRooms: habitaciones || 0,
+          maxPrice: 0,
+          limit: 120
+        })
+      }).catch(()=>null)
+
+      const data = res && res.ok ? await res.json() : { ok:false, items:[] }
+      const raw = data.ok && Array.isArray(data.items) ? data.items : []
+
+      // filtra por distancia si tienen coords
+      const withDist = raw.map(r => ({
+        ...r,
+        __dist: (r.lat && r.lon) ? distMeters(geo, { lat:r.lat, lon:r.lon }) : Infinity
+      })).filter(r => r.__dist <= km*1000)
+
+      comps = dedupeByIdOrURL(withDist)
+      if (comps.length < minComps) km *= 1.8
     }
-    comps = (comps||[]).map(normalizeItem)
 
-    const subj = { lat:g.lat, lon:g.lon }
-    const withGeo = comps.filter(c=>c.lat && c.lon).map(c=>({ ...c, distKm: haversine(subj, {lat:c.lat, lon:c.lon}) }))
-
-    const similar = withGeo.filter(c=>{
-      const areaOk = c.m2>0 && Math.abs(c.m2 - input.areaConstruida_m2)/input.areaConstruida_m2 <= 0.25
-      return areaOk && c.distKm <= 5
-    })
-    let pool = similar.length ? similar : withGeo
-    pool = pool.sort((a,b)=>a.distKm-b.distKm).slice(0,60)
-
-    const pM2 = pool.map(c=> c.precio>0 && c.m2>0 ? c.precio/c.m2 : 0).filter(x=>x>0)
-    if(!pM2.length){
-      await logEvent('estimate_no_comps', { tookMs: Date.now()-started })
-      return NextResponse.json({ ok:false, error:'Sin comparables suficientes' }, { status:200 })
+    if (comps.length < 8) {
+      return NextResponse.json({ ok:true, estimado:0, rango_confianza:[0,0], precio_m2_zona:0, comparables: [], note:'Sin comparables suficientes' })
     }
-    const p10 = percentile(pM2, 0.10), p90 = percentile(pM2, 0.90)
-    const clean = pM2.filter(x=>x>=p10 && x<=p90)
-    let base = median(clean)
-    if(!Number.isFinite(base) || base<=0) base = median(pM2)
 
-    let adj = 1.0
-    if(input.tipo==='casa' && input.areaTerreno_m2 && input.areaTerreno_m2> input.areaConstruida_m2) adj += 0.03
-    if(input.vista_mar) adj += 0.08
-    if((input.antiguedad_anos||0)<5) adj += 0.03
-    if((input.antiguedad_anos||0)>25) adj -= 0.07
-    if((input.habitaciones||0)>3) adj += 0.02
-    if((input.estacionamientos||0)>1) adj += 0.02
+    // precio/m2 comparables (usar m2; si viene 0, descartar)
+    const pm2 = comps.map(c => (c.precio && c.m2) ? c.precio / c.m2 : 0).filter(x => x>0)
+    if (!pm2.length) {
+      return NextResponse.json({ ok:true, estimado:0, rango_confianza:[0,0], precio_m2_zona:0, comparables: [], note:'Comparables sin m2 válido' })
+    }
 
-    const precio_m2_zona = Math.round(base*adj)
-    const estimado = Math.round(precio_m2_zona * input.areaConstruida_m2)
-    const rango = Math.round(estimado*0.10)
+    const p25 = percentile(pm2, 25)
+    const p50 = percentile(pm2, 50) // mediana
+    const p75 = percentile(pm2, 75)
 
-    const comparables = pool.slice(0,12).map(c=>({
-      titulo: c.titulo, precio: c.precio, m2: c.m2, direccion: c.direccion, url: c.url
-    }))
+    // Ajustes simples por características
+    let mult = 1
+    if (tipo === 'casa' && areaTerreno_m2 > areaConstruida_m2) mult += 0.03
+    if (vista_mar) mult += 0.07
+    if (antiguedad_anos > 30) mult -= 0.08
+    if (antiguedad_anos < 5) mult += 0.04
+    if (estacionamientos >= 2) mult += 0.02
 
-    await logEvent('estimate', { tookMs: Date.now()-started, comps: pool.length, pM2: precio_m2_zona })
+    const base = p50 * areaConstruida_m2
+    const estimado = Math.round(base * mult)
+    const lo = Math.round(p25 * areaConstruida_m2 * mult)
+    const hi = Math.round(p75 * areaConstruida_m2 * mult)
+
+    // recorta top comparables
+    const top = comps
+      .sort((a,b)=>a.__dist-b.__dist)
+      .slice(0, 40)
+      .map(({__dist, ...rest}) => rest)
+
     return NextResponse.json({
       ok:true,
       estimado,
-      rango_confianza:[estimado-rango, estimado+rango],
-      precio_m2_zona,
-      comparables
+      rango_confianza: [lo, hi],
+      precio_m2_zona: Math.round(p50),
+      comparables: top
     })
-  }catch(e){
-    await logEvent('estimate_error', { tookMs: Date.now()-started, error:String(e?.message||e) })
-    return NextResponse.json({ ok:false, error:String(e?.message||e) }, { status:200 })
+  } catch (e) {
+    return NextResponse.json({ ok:false, error:String(e?.message||e) }, { status: 500 })
   }
+}
+
+function dedupeByIdOrURL(arr) {
+  const seen = new Set()
+  const out = []
+  for (const x of arr) {
+    const key = x.id || x.url || JSON.stringify(x).slice(0,80)
+    if (seen.has(key)) continue
+    seen.add(key); out.push(x)
+  }
+  return out
 }
