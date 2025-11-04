@@ -1,7 +1,7 @@
 [
   { "id":"1","titulo":"Departamento vista al mar - Miraflores","precio":210000,"moneda":"USD","m2":78,"habitaciones":2,"banos":2,"estacionamientos":1,"direccion":"Malecón 28 de Julio, Miraflores","fuente":"sample","url":"https://example.com/a" },
   { "id":"2","titulo":"Flat remodelado cerca al parque - Miraflores","precio":185000,"moneda":"USD","m2":70,"habitaciones":2,"banos":2,"estacionamientos":0,"direccion":"Av. La Paz, Miraflores","fuente":"sample","url":"https://example.com/b" },
-  { "id":"3","titulo":"Casa amplia con jardín - Surco","precio":360000,"moneda":"USD","m2":160,"habitaciones":4,"banos":3,"estacionamientos":2,"direccion":"Calle Tarata, Surco","fuente":"sample","url":"https://example.com/c" },
+  { "id":"3","titulo":"Casa amplia con jardín - Surco","precio":360000,"moneda":"USD","m2":160,"habitaciones":4,"banos":3,"estacionamientos":2,"direccion":"Jr. Santa Rosa, Surco","fuente":"sample","url":"https://example.com/c" },
   { "id":"4","titulo":"Departamento moderno - San Isidro","precio":295000,"moneda":"USD","m2":95,"habitaciones":3,"banos":2,"estacionamientos":1,"direccion":"Av. Jorge Basadre, San Isidro","fuente":"sample","url":"https://example.com/d" },
   { "id":"5","titulo":"Loft con balcón - Barranco","precio":220000,"moneda":"USD","m2":65,"habitaciones":1,"banos":1,"estacionamientos":0,"direccion":"Malecón Paul Harris, Barranco","fuente":"sample","url":"https://example.com/e" }
 ]
