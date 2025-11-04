@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import ChatSearch from '@/components/ChatSearch'
 
 type Item = {
   id: string; titulo: string; precio: number; moneda: string; m2: number; habitaciones: number;
@@ -17,8 +16,9 @@ function toCSV(rows: Item[]){
 export default function Resultados(){
   const [items, setItems] = useState<Item[]>([])
   const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string|undefined>(undefined)
 
-  // Filtros del panel derecho (opcionales)
+  const [q, setQ] = useState('Depa en Miraflores 2 hab, máx $250000')
   const [filters, setFilters] = useState({
     tipo: '' as ''|'casa'|'departamento',
     min_m2: '' as number | '' ,
@@ -27,31 +27,42 @@ export default function Resultados(){
     banos: '' as number | '' ,
   })
 
-  const search = async (q: string) => {
-    setBusy(true)
-    const res = await fetch('/api/search', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        q,
-        filters: {
-          ...filters,
-          // normalizar vacíos a undefined
-          min_m2: filters.min_m2 || undefined,
-          max_m2: filters.max_m2 || undefined,
-          habitaciones: filters.habitaciones || undefined,
-          banos: filters.banos || undefined,
-          tipo: filters.tipo || undefined
-        }
+  const runSearch = async (text: string) => {
+    setBusy(true); setErr(undefined)
+    try{
+      const res = await fetch('/api/search', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          q: text,
+          filters: {
+            ...filters,
+            min_m2: filters.min_m2 || undefined,
+            max_m2: filters.max_m2 || undefined,
+            habitaciones: filters.habitaciones || undefined,
+            banos: filters.banos || undefined,
+            tipo: filters.tipo || undefined
+          }
+        })
       })
-    })
-    const json = await res.json()
-    setItems(json.items || [])
-    setBusy(false)
+      if(!res.ok) throw new Error('API /api/search no respondió OK')
+      const json = await res.json()
+      setItems(json.items || [])
+    }catch(e:any){
+      setErr(e?.message || 'Error en búsqueda. Usando fallback de demo.')
+      // fallback: leer mock.json directo
+      try{
+        const r2 = await fetch('/mock.json'); const list = await r2.json()
+        setItems(list || [])
+      }catch{
+        setItems([])
+      }
+    }finally{
+      setBusy(false)
+    }
   }
 
-  // Búsqueda inicial de cortesía (para que no quede vacío)
-  useEffect(()=>{ search('departamento miraflores 2 hab máx $250000') },[]) // eslint-disable-line
+  useEffect(()=>{ runSearch(q) },[]) // carga inicial
 
   const exportCSV = ()=>{
     const csv = toCSV(items)
@@ -65,48 +76,49 @@ export default function Resultados(){
 
   return (
     <div className="grid md:grid-cols-3 gap-6">
-      {/* IZQUIERDA: Chat IA */}
+      {/* IZQUIERDA: Chat simple */}
       <div className="md:col-span-1">
-        <ChatSearch onSubmit={search} busy={busy}/>
+        <div className="card p-4 h-full flex flex-col">
+          <h2 className="text-lg font-semibold mb-2">Bot de Búsqueda (IA)</h2>
+          <p className="text-xs text-gray-600">Escribe en lenguaje natural (ej: “depa miraflores 2 hab máx $200000”).</p>
+          <div className="mt-3 flex gap-2">
+            <input className="input flex-1" value={q} onChange={e=>setQ(e.target.value)} placeholder="¿Qué estás buscando?"/>
+            <button className="btn btn-primary" onClick={()=>runSearch(q)} disabled={busy}>{busy?'Buscando…':'Buscar'}</button>
+          </div>
+          {err && <div className="mt-3 text-xs text-red-600">⚠ {err}</div>}
+        </div>
       </div>
 
       {/* DERECHA: Filtros + resultados */}
       <div className="md:col-span-2 space-y-4">
         <div className="card p-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Filtros avanzados</h2>
+            <h2 className="text-lg font-semibold">Filtros</h2>
             <div className="text-sm text-gray-600">Resultados: <b>{total}</b></div>
           </div>
           <div className="grid sm:grid-cols-5 gap-3 mt-3">
             <label className="label">Tipo
-              <select className="input" value={filters.tipo}
-                      onChange={e=>setFilters({...filters, tipo: e.target.value as any})}>
+              <select className="input" value={filters.tipo} onChange={e=>setFilters({...filters, tipo: e.target.value as any})}>
                 <option value="">(Todos)</option>
                 <option value="departamento">Departamento</option>
                 <option value="casa">Casa</option>
               </select>
             </label>
             <label className="label">Min m²
-              <input className="input" type="number" value={String(filters.min_m2)}
-                     onChange={e=>setFilters({...filters, min_m2: e.target.value? Number(e.target.value): ''})}/>
+              <input className="input" type="number" value={String(filters.min_m2)} onChange={e=>setFilters({...filters, min_m2: e.target.value? Number(e.target.value): ''})}/>
             </label>
             <label className="label">Max m²
-              <input className="input" type="number" value={String(filters.max_m2)}
-                     onChange={e=>setFilters({...filters, max_m2: e.target.value? Number(e.target.value): ''})}/>
+              <input className="input" type="number" value={String(filters.max_m2)} onChange={e=>setFilters({...filters, max_m2: e.target.value? Number(e.target.value): ''})}/>
             </label>
             <label className="label">Habitaciones
-              <input className="input" type="number" value={String(filters.habitaciones)}
-                     onChange={e=>setFilters({...filters, habitaciones: e.target.value? Number(e.target.value): ''})}/>
+              <input className="input" type="number" value={String(filters.habitaciones)} onChange={e=>setFilters({...filters, habitaciones: e.target.value? Number(e.target.value): ''})}/>
             </label>
             <label className="label">Baños
-              <input className="input" type="number" value={String(filters.banos)}
-                     onChange={e=>setFilters({...filters, banos: e.target.value? Number(e.target.value): ''})}/>
+              <input className="input" type="number" value={String(filters.banos)} onChange={e=>setFilters({...filters, banos: e.target.value? Number(e.target.value): ''})}/>
             </label>
           </div>
           <div className="mt-3 flex gap-2">
-            <button className="btn btn-primary" onClick={()=>search('')}>
-              {busy ? 'Aplicando…' : 'Aplicar filtros'}
-            </button>
+            <button className="btn btn-primary" onClick={()=>runSearch(q)} disabled={busy}>{busy?'Aplicando…':'Aplicar'}</button>
             <button className="btn btn-secondary" onClick={exportCSV}>Exportar CSV</button>
           </div>
         </div>
@@ -127,7 +139,7 @@ export default function Resultados(){
                   <span className="badge">{(it.fuente||'web').toUpperCase()}</span>
                   <div className="flex gap-3">
                     {it.url && <a href={it.url} target="_blank" className="text-blue-600">Anuncio →</a>}
-                    <a href={`/tasador?area_m2=${it.m2}&habitaciones=${it.habitaciones}&direccion=${encodeURIComponent(it.titulo)}`} className="text-emerald-700">Tasar →</a>
+                    <a href={`/tasador?area_m2=${it.m2}&habitaciones=${it.habitaciones}&direccion=${encodeURIComponent(it.direccion || it.titulo)}`} className="text-emerald-700">Tasar →</a>
                   </div>
                 </div>
               </div>
