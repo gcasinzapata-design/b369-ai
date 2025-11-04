@@ -1,5 +1,4 @@
 'use client'
-
 import { useState } from 'react'
 
 type Out = {
@@ -26,29 +25,19 @@ export default function Tasador(){
   const [error,setError] = useState<string | null>(null)
 
   const calc = async ()=>{
+    if (!form.direccion || !form.area_m2 || !form.habitaciones){
+      setError('Completa dirección, área y habitaciones.'); return
+    }
     setLoading(true); setError(null); setOut(null)
-    const ctrl = new AbortController()
-    const t = setTimeout(()=>ctrl.abort(), 12000)
     try{
-      const res = await fetch('/api/estimate', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify(form),
-        signal: ctrl.signal
-      })
-      if(!res.ok){
-        const txt = await res.text()
-        throw new Error(`/api/estimate ${res.status} – ${txt}`)
-      }
+      const res = await fetch('/api/estimate', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(form) })
+      if(!res.ok) throw new Error(`/api/estimate ${res.status}`)
       const data = await res.json() as Out
       if(!data.ok) throw new Error('Estimador respondió error')
       setOut(data)
     }catch(e:any){
       setError(e?.message || 'No se pudo calcular')
-    }finally{
-      clearTimeout(t)
-      setLoading(false)
-    }
+    }finally{ setLoading(false) }
   }
 
   return (
