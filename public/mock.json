@@ -1,5 +1,5 @@
 [
-  { "id": "1", "titulo": "Departamento vista al mar", "precio": 210000, "moneda": "USD", "m2": 78, "habitaciones": 2, "banos": 2, "estacionamientos": 1, "direccion": "Malecón 28 de Julio, Miraflores", "fuente": "sample", "url": "https://example.com/a" },
-  { "id": "2", "titulo": "Flat remodelado cerca al parque", "precio": 185000, "moneda": "USD", "m2": 70, "habitaciones": 2, "banos": 2, "estacionamientos": 0, "direccion": "Av. La Paz, Miraflores", "fuente": "sample", "url": "https://example.com/b" },
-  { "id": "3", "titulo": "Casa amplia con jardín", "precio": 360000, "moneda": "USD", "m2": 160, "habitaciones": 4, "banos": 3, "estacionamientos": 2, "direccion": "Calle Tarata, Surco", "fuente": "sample", "url": "https://example.com/c" }
+  { "id":"1","titulo":"Departamento vista al mar","precio":210000,"moneda":"USD","m2":78,"habitaciones":2,"direccion":"Malecón 28 de Julio, Miraflores","fuente":"sample","url":"https://example.com/a" },
+  { "id":"2","titulo":"Flat remodelado cerca al parque","precio":185000,"moneda":"USD","m2":70,"habitaciones":2,"direccion":"Av. La Paz, Miraflores","fuente":"sample","url":"https://example.com/b" },
+  { "id":"3","titulo":"Casa amplia con jardín","precio":360000,"moneda":"USD","m2":160,"habitaciones":4,"direccion":"Calle Tarata, Miraflores","fuente":"sample","url":"https://example.com/c" }
 ]
