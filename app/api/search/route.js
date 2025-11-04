@@ -1,88 +1,75 @@
 // app/api/search/route.js
 import { NextResponse } from 'next/server'
-import { scrapeAll } from '../../../lib/scrape/providers.js'
 import { z } from 'zod'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import { geocode } from '../../../lib/geo.js'
+import { normalizeItem } from '../../../lib/normalize.js'
 
-const QuerySchema = z.object({
-  q: z.string().default(''),
-  minArea: z.number().optional(),
-  minRooms: z.number().optional(),
-  district: z.string().optional(),
-  maxPrice: z.number().optional()
+let scrapeAll=null; try{ const m = await import('../../../lib/scrape/providers.js'); scrapeAll=m.scrapeAll }catch{}
+
+const BodySchema = z.object({
+  q: z.string().min(2),
+  filtros: z.object({
+    distrito: z.string().min(3),
+    areaMin: z.number().min(10),
+    habMin: z.number().min(0).default(0),
+    precioMax: z.number().min(0)
+  }).optional()
 })
 
-/**
- * Cache simple en memoria para evitar re-geocodificar lo mismo.
- * Dura 1 hora por key.
- */
-const geoCache = new Map()
-function setCache(key, value) {
-  geoCache.set(key, { value, ts: Date.now() })
-}
-function getCache(key) {
-  const entry = geoCache.get(key)
-  if (!entry) return null
-  if (Date.now() - entry.ts > 1000 * 60 * 60) { // 1h
-    geoCache.delete(key)
-    return null
-  }
-  return entry.value
-}
+export async function POST(req){
+  try{
+    const body = await req.json().catch(()=> ({}))
+    const input = BodySchema.parse(body)
 
-async function geocode(address) {
-  const base = process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org'
-  const key = address.toLowerCase().trim()
-  const cached = getCache(key)
-  if (cached) return cached
-
-  const url = `${base}/search?format=json&q=${encodeURIComponent(address)}&limit=1`
-  try {
-    const r = await fetch(url, {
-      headers: { 'User-Agent': 'B369AI/1.0 (contact: admin@b369.ai)' }
-    })
-    if (!r.ok) return null
-    const j = await r.json()
-    if (Array.isArray(j) && j[0]) {
-      const { lat, lon, display_name } = j[0]
-      const result = { lat: Number(lat), lon: Number(lon), name: display_name }
-      setCache(key, result)
-      return result
-    }
-  } catch (e) {
-    console.warn('Geocode fail:', e.message)
-  }
-  return null
-}
-
-export async function POST(req) {
-  try {
-    const body = await req.json().catch(() => ({}))
-    const { q, minArea, minRooms, district, maxPrice } = QuerySchema.parse(body)
     const ENABLE_SCRAPING = process.env.ENABLE_SCRAPING === 'true'
+    const q = input.q
+    const filtros = input.filtros
 
-    // Scraping o mock
-    const items = await scrapeAll({ q, minArea, minRooms, district, maxPrice, enable: ENABLE_SCRAPING })
-
-    // Geocodifica hasta 10 resultados que no tengan coords
-    const limit = 10
-    const tasks = []
-    for (const it of items.slice(0, limit)) {
-      if (!it.lat && !it.lon && it.direccion) {
-        tasks.push(
-          geocode(it.direccion).then((g) => {
-            if (g) {
-              it.lat = g.lat
-              it.lon = g.lon
-            }
-          })
-        )
-      }
+    // 1) Fuente: scraping o mock
+    let items = []
+    if (ENABLE_SCRAPING && typeof scrapeAll==='function'){
+      items = (await scrapeAll({ q, enable:true })) || []
+    }else{
+      const file = path.join(process.cwd(),'public','mock.json')
+      const txt = await fs.readFile(file, 'utf8').catch(()=> '[]')
+      items = JSON.parse(txt)
     }
-    await Promise.allSettled(tasks)
 
-    return NextResponse.json({ ok: true, items })
-  } catch (err) {
-    console.error('Search API error', err)
-    return NextResponse.json({ ok: false, error: String(err?.message || err) }, { status: 500 })
+    // 2) Normaliza
+    items = (items || []).map(normalizeItem)
+
+    // 3) Geocodifica faltantes (hasta 25)
+    const need = items.filter(x=>(!x.lat || !x.lon) && x.direccion).slice(0,25)
+    await Promise.allSettled(need.map(async x=>{
+      const g = await geocode(x.direccion)
+      if(g){ x.lat=g.lat; x.lon=g.lon }
+    }))
+
+    // 4) Filtros obligatorios si vienen
+    if (filtros){
+      const distrito = filtros.distrito.toLowerCase()
+      items = items.filter(it=>{
+        const okDistrito = it.direccion ? it.direccion.toLowerCase().includes(distrito) : true
+        const okArea = it.m2 >= filtros.areaMin
+        const okHab = (it.habitaciones||0) >= filtros.habMin
+        const okPrecio = it.precio <= filtros.precioMax
+        return okDistrito && okArea && okHab && okPrecio
+      })
+    }
+
+    // 5) Centro aproximado (si hay coords)
+    const withGeo = items.filter(x=>x.lat && x.lon)
+    let center = null
+    if (withGeo.length){
+      const lat = withGeo.reduce((s,x)=>s+x.lat,0)/withGeo.length
+      const lon = withGeo.reduce((s,x)=>s+x.lon,0)/withGeo.length
+      center = { lat, lon }
+    }
+
+    return NextResponse.json({ ok:true, items, center })
+  }catch(e){
+    return NextResponse.json({ ok:false, error:String(e?.message||e) }, { status:400 })
   }
 }
