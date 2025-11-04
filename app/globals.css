@@ -2,21 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Look & feel: limpio, acento teal, cards suaves, buena legibilidad */
-:root { color-scheme: light; }
-html, body { height: 100%; }
 body { @apply bg-white text-brand-black font-sans; }
 .container { @apply max-w-6xl mx-auto px-4; }
-
 .card { @apply rounded-2xl border border-gray-200 bg-white shadow; }
 .btn { @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium; }
 .btn-primary { @apply bg-accent text-white; }
 .btn-secondary { @apply bg-brand-800 text-white; }
 .input { @apply border rounded-lg px-3 py-2 w-full; }
-.label { @apply text-sm text-gray-700 block; }
+.label { @apply text-sm text-gray-700; display:block; }
 .badge { @apply inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700; }
 .stat { @apply rounded-lg bg-gray-50 p-4 border text-sm; }
 .brand-hero { @apply bg-brand-900 text-white rounded-2xl p-8; }
-
-header.nav { @apply border-b bg-white/80 backdrop-blur; }
-footer.site { @apply border-t; }
