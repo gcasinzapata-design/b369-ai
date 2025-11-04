@@ -1,123 +1,99 @@
 // app/api/estimate/route.js
-import { NextResponse } from 'next/server'
-import { z } from 'zod'
-import { geocodeAddress, distMeters } from '../../../lib/geo.js'
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { geocodeAddress } from '@/lib/geo/geocode';
+import { searchEverywhere } from '@/lib/scrape/providers';
 
-const BodySchema = z.object({
-  direccion: z.string().min(3),
-  district: z.string().optional(),
+const InSchema = z.object({
+  direccion: z.string(),
+  distrito: z.string().optional().default(''),
   tipo: z.enum(['departamento','casa']).default('departamento'),
-  areaConstruida_m2: z.number().int().positive(),
-  areaTerreno_m2: z.number().int().nonnegative().optional(),
-  antiguedad_anos: z.number().int().nonnegative().optional(),
-  vista_mar: z.boolean().optional(),
-  habitaciones: z.number().int().nonnegative().optional(),
-  banos: z.number().int().nonnegative().optional(),
-  estacionamientos: z.number().int().nonnegative().optional(),
-  maxKm: z.number().optional().default(2),
-  minComps: z.number().optional().default(40)
-})
+  m2_construidos: z.number().positive(),             // OBLIGATORIO
+  m2_terreno: z.number().optional(),                  // OPCIONAL
+  antiguedad_anos: z.number().optional().default(0),
+  vista_mar: z.boolean().optional().default(false),
+  habitaciones: z.number().optional().default(0),
+  banos: z.number().optional().default(0),
+  estacionamientos: z.number().optional().default(0)
+});
 
-function percentile(arr, p) {
-  if (!arr.length) return 0
-  const s = [...arr].sort((a,b)=>a-b)
-  const idx = Math.min(s.length-1, Math.max(0, Math.round((p/100)*(s.length-1))))
-  return s[idx]
-}
-function dedupe(arr) {
-  const seen = new Set(), out=[]
-  for (const x of arr) {
-    const key = x.url || x.id || (x.titulo||'')+(x.m2||'')
-    if (seen.has(key)) continue; seen.add(key); out.push(x)
-  }
-  return out
+function percentile(sorted, p) {
+  if (!sorted.length) return 0;
+  const idx = (p/100)*(sorted.length-1);
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  if (lo===hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi]-sorted[lo])*(idx-lo);
 }
 
 export async function POST(req) {
   try {
-    const origin = req.nextUrl?.origin || ''
-    const body = await req.json()
-    const parsed = BodySchema.safeParse(body)
-    if (!parsed.success) {
-      return NextResponse.json({ ok:false, error:'invalid_body', issues: parsed.error.issues }, { status: 400 })
+    const body = await req.json();
+    const input = InSchema.parse(body || {});
+
+    // Geocode de la dirección
+    const geo = await geocodeAddress(input.direccion, input.distrito || '');
+    if (!geo.ok) return NextResponse.json({ ok:false, error:'no_geocode' }, { status: 200 });
+
+    // Buscar comparables (al menos 40 si es posible)
+    let comps = [];
+    if (process.env.ENABLE_SCRAPING === '1') {
+      comps = await searchEverywhere({
+        q: input.direccion,
+        district: input.distrito || '',
+        minArea: Math.max(40, Math.round(input.m2_construidos*0.7)),
+        minRooms: input.habitaciones || 0,
+        maxPriceUSD: undefined,
+        limit: 80
+      });
     }
-    const {
-      direccion, district, tipo,
-      areaConstruida_m2, areaTerreno_m2=0, antiguedad_anos=0, vista_mar=false,
-      habitaciones=0, banos=0, estacionamientos=0,
-      maxKm, minComps
-    } = parsed.data
-
-    const geo = await geocodeAddress(direccion, district || '')
-    if (!geo) {
-      return NextResponse.json({ ok:false, error:'no_geocode', note:'Intenta “Av Precursores 537, Santiago de Surco, Lima, Perú”.' }, { status: 400 })
+    if (!comps.length) {
+      // fallback al mock
+      try {
+        comps = await (await fetch(new URL('/mock.json', req.url))).json();
+      } catch { comps = []; }
     }
 
-    let comps = []
-    let km = Math.max(1.0, maxKm)
-    for (let attempt=0; attempt<5 && comps.length<minComps; attempt++) {
-      const res = await fetch(`${origin}/api/search`, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          q: `${tipo} ${district||''}`,
-          district,
-          minArea: Math.max(30, Math.round(areaConstruida_m2 * 0.65)), // más laxo
-          minRooms: habitaciones || 0,
-          maxPrice: 0,
-          limit: 120
-        })
-      }).catch(()=>null)
-
-      const data = res && res.ok ? await res.json() : { ok:false, items:[] }
-      const raw = data.ok && Array.isArray(data.items) ? data.items : []
-
-      const withDist = raw.map(r => ({
-        ...r,
-        __dist: (r.lat && r.lon) ? distMeters(geo, { lat:r.lat, lon:r.lon }) : Infinity
-      })).filter(r => r.__dist <= km*1000)
-
-      comps = dedupe(withDist)
-      if (comps.length < minComps) km = km * 1.9
-    }
+    // Filtrado por tipo aproximado + rango de área +/-30%
+    const minA = input.m2_construidos*0.7, maxA = input.m2_construidos*1.3;
+    comps = comps.filter(c => {
+      const okArea = c.m2 && c.m2 >= minA && c.m2 <= maxA;
+      const okRooms = (input.habitaciones || 0) ? ((c.habitaciones||0) >= input.habitaciones) : true;
+      return !!c.precio && !!c.m2 && okArea && okRooms;
+    }).slice(0, 60);
 
     if (comps.length < 8) {
-      return NextResponse.json({
-        ok:true, estimado:0, rango_confianza:[0,0], precio_m2_zona:0,
-        p25:0, p50:0, p75:0,
-        comparables: [],
-        note:'Sin comparables suficientes cercanos (baja filtros o prueba distrito contiguo).'
-      })
+      return NextResponse.json({ ok:false, error:'no_comps' }, { status: 200 });
     }
 
-    const pm2 = comps.map(c => (c.precio && c.m2) ? c.precio / c.m2 : 0).filter(x => x>0)
-    const p25 = percentile(pm2, 25), p50 = percentile(pm2, 50), p75 = percentile(pm2, 75)
+    // Calcular precio/m2 y percentiles
+    const pm2 = comps.map(c => (c.precio / Math.max(1, c.m2))).filter(Number.isFinite).sort((a,b)=>a-b);
+    const p10 = Math.round(percentile(pm2, 10));
+    const p25 = Math.round(percentile(pm2, 25));
+    const p50 = Math.round(percentile(pm2, 50));
+    const p75 = Math.round(percentile(pm2, 75));
+    const p90 = Math.round(percentile(pm2, 90));
 
-    let mult = 1
-    if (tipo === 'casa' && areaTerreno_m2 > areaConstruida_m2) mult += 0.03
-    if (vista_mar) mult += 0.07
-    if (antiguedad_anos > 30) mult -= 0.08
-    if (antiguedad_anos < 5) mult += 0.04
-    if (estacionamientos >= 2) mult += 0.02
+    // Ajustes simples por vista al mar / antigüedad / tipo
+    let mult = 1.0;
+    if (input.vista_mar) mult += 0.08;
+    if (input.antiguedad_anos > 25) mult -= 0.07;
+    if (input.antiguedad_anos < 5)  mult += 0.03;
+    if (input.tipo === 'casa' && input.m2_terreno) mult += 0.05;
 
-    const base = p50 * areaConstruida_m2
-    const estimado = Math.round(base * mult)
-    const lo = Math.round(p25 * areaConstruida_m2 * mult)
-    const hi = Math.round(p75 * areaConstruida_m2 * mult)
-
-    const top = comps.sort((a,b)=>a.__dist-b.__dist).slice(0, 40).map(({__dist,...rest})=>rest)
+    const base_m2 = p50;
+    const estimado = Math.round(base_m2 * input.m2_construidos * mult);
+    const rango = Math.round(estimado * 0.08);
 
     return NextResponse.json({
-      ok:true,
+      ok: true,
+      geo: { lat: geo.lat, lon: geo.lon, display: geo.display_name },
+      precio_m2_zona: base_m2,
+      percentiles: { p10,p25,p50,p75,p90 },
       estimado,
-      rango_confianza:[lo,hi],
-      precio_m2_zona: Math.round(p50),
-      p25: Math.round(p25),
-      p50: Math.round(p50),
-      p75: Math.round(p75),
-      comparables: top
-    })
+      rango_confianza: [estimado - rango, estimado + rango],
+      comparables: comps.slice(0, 20)
+    });
   } catch (e) {
-    return NextResponse.json({ ok:false, error:String(e?.message||e) }, { status: 500 })
+    return NextResponse.json({ ok:false, error:String(e.message||e) }, { status: 400 });
   }
 }
