@@ -1,63 +1,44 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useState } from 'react'
 
 type Out = {
-  ok: boolean
-  estimado: number
-  rango_confianza: [number, number]
-  precio_m2_zona: number
-  comparables: Array<{ precio:number; m2:number; titulo?:string; direccion?:string }>
+  ok:boolean
+  estimado:number
+  rango_confianza:[number,number]
+  precio_m2_zona:number
+  comparables: Array<{ precio:number; m2:number; titulo?:string; direccion?:string; url?:string }>
 }
 
 export default function Tasador(){
-  const sp = useSearchParams()
   const [form,setForm] = useState({
-    direccion: 'Av. La Paz 123, Miraflores',
-    tipo: 'departamento',
-    areaConstruida_m2: 85,          // OBLIGATORIA
-    areaTerreno_m2: 0,              // OPCIONAL
-    antiguedad_anos: 8,
-    vista_mar: true,
-    habitaciones: 2,
-    banos: 2,
-    estacionamientos: 1
+    direccion:'Av. La Paz 123, Miraflores',
+    tipo:'departamento',
+    areaConstruida_m2:85,     // OBLIGATORIA
+    areaTerreno_m2:0,         // opcional
+    antiguedad_anos:8,
+    vista_mar:true,
+    habitaciones:2,
+    banos:2,
+    estacionamientos:1
   })
   const [out,setOut] = useState<Out | null>(null)
   const [loading,setLoading] = useState(false)
   const [error,setError] = useState<string | null>(null)
 
-  useEffect(()=>{
-    const m2 = Number(sp.get('areaConstruida_m2') || form.areaConstruida_m2)
-    const dir = sp.get('direccion') || form.direccion
-    setForm(f=>({ ...f, areaConstruida_m2:m2, direccion:dir }))
-  },[sp])
-
   const calc = async ()=>{
-    if(!form.areaConstruida_m2 || form.areaConstruida_m2<20){
-      setError('El área construida (m²) es obligatoria y debe ser ≥ 20'); return
-    }
     setLoading(true); setError(null); setOut(null)
-    const ctrl = new AbortController()
-    const t = setTimeout(()=>ctrl.abort(), 15000)
     try{
       const res = await fetch('/api/estimate', {
         method: 'POST',
         headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify(form),
-        signal: ctrl.signal
+        body: JSON.stringify(form)
       })
-      if(!res.ok){
-        const txt = await res.text()
-        throw new Error(`/api/estimate ${res.status} – ${txt}`)
-      }
-      const data = await res.json() as Out
-      if(!data.ok) throw new Error('Estimador respondió error')
+      const data = await res.json()
+      if(!res.ok || !data.ok) throw new Error(data.error || 'Error en estimación')
       setOut(data)
     }catch(e:any){
       setError(e?.message || 'No se pudo calcular')
     }finally{
-      clearTimeout(t)
       setLoading(false)
     }
   }
@@ -78,7 +59,7 @@ export default function Tasador(){
           <label className="label">Área construida (m²)
             <input className="input" type="number" value={form.areaConstruida_m2} onChange={e=>setForm({...form, areaConstruida_m2:Number(e.target.value)})}/>
           </label>
-          <label className="label">Área terreno (m²) <span className="text-gray-400">(opcional)</span>
+          <label className="label">Área terreno (m²)
             <input className="input" type="number" value={form.areaTerreno_m2} onChange={e=>setForm({...form, areaTerreno_m2:Number(e.target.value)})}/>
           </label>
           <label className="label">Antigüedad
@@ -118,7 +99,12 @@ export default function Tasador(){
                 <span className="badge">Comparables: {out.comparables.length}</span>
               </div>
               <ul className="list-disc pl-5">
-                {out.comparables.map((c, i)=>(<li key={i}>{c.titulo || 'Comparable'} — {c.m2} m² · ${c.precio.toLocaleString()} · {c.direccion}</li>))}
+                {out.comparables.map((c, i)=>(
+                  <li key={i}>
+                    {c.titulo || 'Comparable'} — {c.m2} m² · ${c.precio.toLocaleString()}
+                    {c.url && <> · <a className="text-blue-600" href={c.url} target="_blank">ver</a></>}
+                  </li>
+                ))}
               </ul>
             </div>
           )}
