@@ -2,37 +2,36 @@
 'use client'
 import { useState } from 'react'
 
-type Msg = { role: 'user'|'assistant'; content: string }
+type Role = 'user' | 'assistant'
+type Msg = { role: Role; content: string }
 
-export default function ChatAgent({ context }:{ context?: string }) {
-  const [msgs, setMsgs] = useState<Msg[]>([{ role:'assistant', content:'Hola, soy tu asesor inmobiliario. Pídeme que afine filtros, compare opciones o estime el precio m² por zona 👋' }])
+export default function ChatAgent({ context }: { context?: any }){
+  const [msgs, setMsgs] = useState<Msg[]>([{ role:'assistant', content:'Hola, soy tu asesor inmobiliario. Pídeme que afine filtros o estime precio m² por zona.' }])
   const [input, setInput] = useState('')
 
-  const send = async () => {
-    if (!input.trim()) return
-    const newMsgs: Msg[] = [...msgs, { role:'user', content: input }]
+  const send = async ()=>{
+    if(!input.trim()) return
+    const newMsgs: Msg[] = [...msgs, {role:'user', content:input}]
     setMsgs(newMsgs); setInput('')
     const res = await fetch('/api/agent', {
-      method:'POST', headers:{ 'Content-Type':'application/json' },
+      method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ messages:newMsgs, context })
     })
-    const data = await res.json().catch(()=>({ ok:false }))
-    const text = data?.message || 'No pude responder ahora. Ajusta filtros o repite tu consulta.'
-    setMsgs(m => [...m, { role:'assistant', content: text }])
+    const data = await res.json()
+    if (data?.ok && data?.reply) setMsgs(m => [...m, { role:'assistant', content:data.reply }])
   }
 
   return (
-    <div className="card p-3 flex flex-col h-[520px]">
-      <div className="text-sm font-semibold mb-2">Asesor Inmobiliario</div>
-      <div className="flex-1 overflow-auto space-y-2 text-sm">
+    <div className="card p-3 flex flex-col gap-2 h-[560px]">
+      <div className="flex-1 overflow-auto space-y-2">
         {msgs.map((m,i)=>(
           <div key={i} className={m.role==='user'?'text-right':''}>
-            <div className={`inline-block px-3 py-2 rounded-lg ${m.role==='user'?'bg-brand-800 text-white':'bg-gray-100'}`}>{m.content}</div>
+            <span className={`inline-block px-3 py-2 rounded-lg text-sm ${m.role==='user'?'bg-brand-800 text-white':'bg-gray-100'}`}>{m.content}</span>
           </div>
         ))}
       </div>
-      <div className="mt-2 flex gap-2">
-        <input className="input flex-1" value={input} onChange={e=>setInput(e.target.value)} placeholder="Ej: depa 2 hab en Sani hasta 250K"/>
+      <div className="flex gap-2">
+        <input className="input flex-1" placeholder="Ej: depa 2 hab miraflores 250K" value={input} onChange={e=>setInput(e.target.value)} />
         <button className="btn btn-primary" onClick={send}>Enviar</button>
       </div>
     </div>
